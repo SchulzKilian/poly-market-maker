@@ -1,3 +1,4 @@
+import requests
 from prometheus_client import Counter, Gauge, Histogram
 
 chain_requests_counter = Counter(

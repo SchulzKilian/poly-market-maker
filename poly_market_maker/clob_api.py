@@ -1,40 +1,43 @@
 import logging
 import sys
 import time
-from py_clob_client.client import ClobClient, ApiCreds, OrderArgs, FilterParams
+import requests
+from py_clob_client.client import ClobClient, ApiCreds, OrderArgs
 from py_clob_client.exceptions import PolyApiException
+import pickle
 
-from poly_market_maker.utils import randomize_default_price
-from poly_market_maker.constants import OK
-from poly_market_maker.metrics import clob_requests_latency
+from constants import OK
+from metrics import clob_requests_latency
 
 DEFAULT_PRICE = 0.5
 
 
 class ClobApi:
-    def __init__(self, host, chain_id, private_key):
+    def __init__(self, host= None, chain_id= 137, private_key= None):
         self.logger = logging.getLogger(self.__class__.__name__)
+        if private_key:
+            self.client = self._init_client_L1(
+                host=host,
+                chain_id=chain_id,
+                private_key=private_key,
+            )
 
-        self.client = self._init_client_L1(
-            host=host,
-            chain_id=chain_id,
-            private_key=private_key,
-        )
+            try:
+                api_creds = self.client.derive_api_key()
+                self.logger.debug(f"Api key found: {api_creds.api_key}")
+            except PolyApiException:
+                self.logger.debug("Api key not found. Creating a new one...")
+                api_creds = self.client.create_api_key()
+                self.logger.debug(f"Api key created: {api_creds.api_key}.")
 
-        try:
-            api_creds = self.client.derive_api_key()
-            self.logger.debug(f"Api key found: {api_creds.api_key}")
-        except PolyApiException:
-            self.logger.debug("Api key not found. Creating a new one...")
-            api_creds = self.client.create_api_key()
-            self.logger.debug(f"Api key created: {api_creds.api_key}.")
-
-        self.client = self._init_client_L2(
-            host=host,
-            chain_id=chain_id,
-            private_key=private_key,
-            creds=api_creds,
-        )
+            self.client = self._init_client_L2(
+                host=host,
+                chain_id=chain_id,
+                private_key=private_key,
+                creds=api_creds,
+            )
+        else:
+            self.client = None
 
     def get_address(self):
         return self.client.get_address()
@@ -48,33 +51,99 @@ class ClobApi:
     def get_exchange(self, neg_risk = False):
         return self.client.get_exchange_address(neg_risk)
 
-    def get_price(self, token_id: int) -> float:
+    def get_price(self, token_id: int, side: str = None) -> float:
         """
         Get the current price on the orderbook
         """
-        self.logger.debug("Fetching midpoint price from the API...")
+        self.logger.debug(f"Fetching price for token {token_id} with side {side}...")
         start_time = time.time()
         try:
-            resp = self.client.get_midpoint(token_id)
-            clob_requests_latency.labels(method="get_midpoint", status="ok").observe(
+            if side:
+                resp = self.client.get_price(token_id, side)
+                price = resp.get("price")
+            else:
+                resp = self.client.get_midpoint(token_id)
+                price = resp.get("mid")
+
+            clob_requests_latency.labels(method="get_price", status="ok").observe(
                 (time.time() - start_time)
             )
-            if resp.get("mid") is not None:
-                return float(resp.get("mid"))
+            if price is not None:
+                return float(price)
         except Exception as e:
             self.logger.error(f"Error fetching current price from the CLOB API: {e}")
-            clob_requests_latency.labels(method="get_midpoint", status="error").observe(
+            clob_requests_latency.labels(method="get_price", status="error").observe(
                 (time.time() - start_time)
             )
+        # TODO Return None and handle it in the caller
+        return None
 
-        return self._rand_price()
+    def get_book(self, token_id: int):
+        """
+        Get the order book for a given token
+        """
+        self.logger.debug(f"Fetching order book for token {token_id}...")
+        start_time = time.time()
+        try:
+            api_url = "https://clob.polymarket.com/book"
+            parameters = {"token_id": token_id}
+            response = requests.get(api_url, params=parameters)
+            logging.debug(f"Response: {response.text}")
+            clob_requests_latency.labels(method="get_orderbook", status="ok").observe(
+                (time.time() - start_time)
+            )
+            return response.json()
+        except Exception as e:
+            self.logger.error(f"Error fetching order book from the CLOB API: {e}")
+            clob_requests_latency.labels(method="get_orderbook", status="error").observe(
+                (time.time() - start_time)
+            )
+        return None
 
-    def _rand_price(self) -> float:
-        price = randomize_default_price(DEFAULT_PRICE)
-        self.logger.info(
-            f"Could not fetch price from CLOB API, returning random price: {price}"
-        )
-        return price
+    def get_price_history(self, token_id: int, start_ts: int, end_ts: int):
+        """
+        Get the price history for a given token
+        """
+        self.logger.debug(f"Fetching price history for token {token_id}...")
+        start_time = time.time()
+        try:
+            api_url = "https://clob.polymarket.com/prices-history"
+            parameters = {"market": token_id, "startTs": start_ts, "endTs": end_ts}
+            response = requests.get(api_url, params=parameters)
+            logging.debug(f"Response: {response.text}")
+            clob_requests_latency.labels(method="get_price_history", status="ok").observe(
+                (time.time() - start_time)
+            )
+            return response.json().get("history", [])
+        except Exception as e:
+            self.logger.error(f"Error fetching price history from the CLOB API: {e}")
+            clob_requests_latency.labels(method="get_price_history", status="error").observe(
+                (time.time() - start_time)
+            )
+        return None
+
+    def get_token_trades(self, token_id: int):
+        """
+        Get recent trades for a given token
+        """
+        self.logger.debug(f"Fetching trades for token {token_id}...")
+        start_time = time.time()
+        try:
+            # Assuming the client has a get_trades method that can filter by token_id
+            resp = self.client.get_trades(FilterParams(token_id=token_id))
+            clob_requests_latency.labels(method="get_trades", status="ok").observe(
+                (time.time() - start_time)
+            )
+            return resp
+        except Exception as e:
+            self.logger.error(f"Error fetching trades from the CLOB API: {e}")
+            clob_requests_latency.labels(method="get_trades", status="error").observe(
+                (time.time() - start_time)
+            )
+        return None
+
+
+ 
 
     def get_orders(self, condition_id: str):
         """
@@ -217,3 +286,4 @@ class ClobApi:
             "token_id": token_id,
             "id": order_id,
         }
+
