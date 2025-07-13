@@ -1,35 +1,33 @@
 import logging
 from prometheus_client import start_http_server
 import time
-
-from poly_market_maker.args import get_args
-from poly_market_maker.price_feed import PriceFeedClob
-from poly_market_maker.gas import GasStation, GasStrategy
-from poly_market_maker.utils import setup_logging, setup_web3
-from poly_market_maker.order import Order, Side
-from poly_market_maker.market import Market
-from poly_market_maker.token import Token, Collateral
-from poly_market_maker.clob_api import ClobApi
-from poly_market_maker.lifecycle import Lifecycle
-from poly_market_maker.orderbook import OrderBookManager
-from poly_market_maker.contracts import Contracts
-from poly_market_maker.metrics import keeper_balance_amount
-from poly_market_maker.strategy import StrategyManager
-
+import os
+# from args import get_args
+from price_feed import PriceFeedClob
+from gas import GasStation, GasStrategy
+from utils import setup_logging, setup_web3
+from order import Order, Side
+from market import Market
+from token_class import Token, Collateral
+from clob_api import ClobApi
+from lifecycle import Lifecycle
+from orderbook import OrderBookManager
+from contracts import Contracts
+from metrics import keeper_balance_amount
+from strategy import StrategyManager
+import types
 
 class App:
     """Market maker keeper on Polymarket CLOB"""
 
-    def __init__(self, args: list):
-        setup_logging()
+    def __init__(self, config, condition_id: str = None):
         self.logger = logging.getLogger(__name__)
 
-        args = get_args(args)
-        self.sync_interval = args.sync_interval
+        self.sync_interval = 5
 
         # self.min_tick = args.min_tick
         # self.min_size = args.min_size
-
+        args = config
         # server to expose the metrics.
         self.metrics_server_port = args.metrics_server_port
         start_http_server(self.metrics_server_port)
@@ -52,7 +50,7 @@ class App:
         self.contracts = Contracts(self.web3, self.gas_station)
 
         self.market = Market(
-            args.condition_id,
+            condition_id,
             self.clob_api.get_collateral_address(),
         )
 

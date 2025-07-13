@@ -6,18 +6,15 @@ import yaml
 from logging import config
 from web3 import Web3
 from web3.middleware import (
-    geth_poa_middleware,
-    construct_sign_and_send_raw_middleware,
-    time_based_cache_middleware,
-    latest_block_based_cache_middleware,
-    simple_cache_middleware,
+    ExtraDataToPOAMiddleware,
 )
+from web3.middleware.signing import SignAndSendRawMiddlewareBuilder # New import for signing middleware
 from web3.gas_strategies.time_based import fast_gas_price_strategy
 
 
 def setup_logging(
     log_path="logging.yaml",
-    log_level=logging.INFO,
+    log_level=logging.DEBUG,
     env_key="LOGGING_CONFIG_FILE",
 ):
     """
@@ -40,25 +37,29 @@ def setup_logging(
         )
         logging.getLogger(__name__).info("Logging configured with default attributes!")
     # Suppress requests and web3 verbose logs
-    logging.getLogger("requests").setLevel(logging.INFO)
-    logging.getLogger("web3").setLevel(logging.INFO)
+    logging.getLogger("requests").setLevel(logging.WARNING)
+    logging.getLogger("web3").setLevel(logging.WARNING)
 
 
 def setup_web3(rpc_url, private_key):
     w3 = Web3(Web3.HTTPProvider(rpc_url))
 
     # Middleware to sign transactions from a private key
-    w3.middleware_onion.inject(geth_poa_middleware, layer=0)
-    w3.middleware_onion.add(construct_sign_and_send_raw_middleware(private_key))
+    # ExtraDataToPOAMiddleware should be injected at layer 0 as it modifies extraData field
+    w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+    
+    # Updated: Use SignAndSendRawMiddlewareBuilder to construct the signing middleware
+    w3.middleware_onion.add(SignAndSendRawMiddlewareBuilder.build(private_key))
+    
     w3.eth.default_account = w3.eth.account.from_key(private_key).address
 
     # Gas Middleware
     w3.eth.set_gas_price_strategy(fast_gas_price_strategy)
 
-    # Caching middleware
-    w3.middleware_onion.add(time_based_cache_middleware)
-    w3.middleware_onion.add(latest_block_based_cache_middleware)
-    w3.middleware_onion.add(simple_cache_middleware)
+    # Caching middleware - these have been removed in web3.py v7.0.0+
+    # w3.middleware_onion.add(time_based_cache_middleware)
+    # w3.middleware_onion.add(latest_block_based_cache_middleware)
+    # w3.middleware_onion.add(simple_cache_middleware)
 
     return w3
 

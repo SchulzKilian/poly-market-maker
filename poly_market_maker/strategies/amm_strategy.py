@@ -1,9 +1,9 @@
-from poly_market_maker.orderbook import OrderBook
-from poly_market_maker.constants import MIN_SIZE
-from poly_market_maker.order import Order
+from orderbook import OrderBook
+from constants import MIN_SIZE
+from order import Order
 
-from poly_market_maker.strategies.amm import AMMManager, AMMConfig
-from poly_market_maker.strategies.base_strategy import BaseStrategy
+from strategies.amm import AMMManager, AMMConfig
+from strategies.base_strategy import BaseStrategy
 
 
 class OrderType:

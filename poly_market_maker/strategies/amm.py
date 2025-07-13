@@ -1,9 +1,9 @@
 import logging
 from math import sqrt
 
-from poly_market_maker.token import Token, Collateral
-from poly_market_maker.order import Order, Side
-from poly_market_maker.utils import math_round_down
+from token_class import Token, Collateral
+from order import Order, Side
+from utils import math_round_down
 
 
 class AMMConfig:

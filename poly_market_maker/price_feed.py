@@ -1,9 +1,9 @@
 from enum import Enum
 import logging
 
-from poly_market_maker.clob_api import ClobApi
-from poly_market_maker.market import Market
-from poly_market_maker.token import Token
+from clob_api import ClobApi
+from market import Market
+from token_class import Token
 
 
 class PriceFeedSource(Enum):

@@ -5,32 +5,64 @@ import time
 import json
 import os
 import logging
-import types # Import types for SimpleNamespace
-
+import types
+from enum import Enum
 from app import App
-from args import get_args
-from utils import setup_logging
+from dotenv import load_dotenv
 
-# The file to read the top market condition_ids from
+# --- Configuration is now handled directly in this file ---
+
+# 1. Load environment variables from a .env file into the OS environment.
+# This should be done at the very top of the script.
+load_dotenv()
+
+# 2. Define a placeholder for the Strategy Enum to make the script runnable.
+class Strategy(Enum):
+    AMM = "AMM"
+    BANDS = "Bands"
+    def __str__(self):
+        return self.value
+
+# 3. Define all default configuration values in a single dictionary.
+DEFAULT_CONFIG = {
+    "private_key": None,
+    "rpc_url": None,
+    "clob_api_url": None,
+    "sync_interval": 30,
+    "min_size": 15.0,
+    "min_tick": 0.01,
+    "refresh_frequency": 5,
+    "gas_strategy": "web3",
+    "gas_station_url": None,
+    "fixed_gas_price": None,
+    "metrics_server_port": 9008,
+    "strategy": Strategy.AMM,
+    "strategy_config": "config/strategy.yaml",
+}
+
+def setup_logging():
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s %(levelname)-8s %(threadName)-12s %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+# --- Main Application Logic ---
+
 MARKET_FILE = "markets_to_trade.json"
-# How often to check the market file for changes
 CHECK_INTERVAL = 10  # seconds
 
 def run_market_maker(config_obj, condition_id: str):
     """
     Runs the market maker for a single condition_id.
     This function is the target for the multiprocessing.Process.
-
-    FIX: This function now accepts a 'config_obj' which is the already-parsed
-    configuration. It does NOT call get_args() again. It passes the config
-    directly to the App.
+    It receives a ready-to-use configuration object.
     """
-    # A new process needs to have logging configured again.
     setup_logging()
     logger = logging.getLogger(__name__)
     logger.info(f"Starting market maker bot for condition_id: {condition_id}")
     try:
-        # The config_obj is passed directly to the App. No re-parsing!
+        # The config object is passed directly to the App.
         app = App(config_obj, condition_id)
         app.main()
     except KeyboardInterrupt:
@@ -38,14 +70,19 @@ def run_market_maker(config_obj, condition_id: str):
     except Exception:
         logger.exception(f"An error occurred in the market maker bot for {condition_id}")
 
-
 if __name__ == "__main__":
-    # This guard is crucial. Code inside only runs in the main process.
     setup_logging()
     logger = logging.getLogger(__name__)
 
-    # 1. Get arguments ONCE and create a base configuration dictionary.
-    base_args_dict = get_args(sys.argv[1:])
+    # 4. Create the base configuration object from defaults and environment variables.
+    config_dict = DEFAULT_CONFIG.copy()
+    for key in config_dict:
+        env_value = os.environ.get(key.upper())
+        if env_value is not None:
+            config_dict[key] = env_value
+            
+    # Convert the final dictionary into a SimpleNamespace object for dot notation access (e.g., config.private_key)
+    base_config = types.SimpleNamespace(**config_dict)
 
     running_bots = {}  # {condition_id: Process}
 
@@ -62,7 +99,11 @@ if __name__ == "__main__":
                     time.sleep(CHECK_INTERVAL)
                     continue
             else:
-                logger.info(f"{MARKET_FILE} not found. Waiting...")
+                # For testing, if the file doesn't exist, let's create it with dummy data.
+                logger.info(f"{MARKET_FILE} not found. Creating a dummy file for demonstration.")
+                with open(MARKET_FILE, 'w') as f:
+                    json.dump(["market_a", "market_b", "market_c"], f)
+                continue # Loop again to read the new file
 
             target_set = set(target_condition_ids)
             running_set = set(running_bots.keys())
@@ -82,24 +123,20 @@ if __name__ == "__main__":
             # --- Start new bots ---
             bots_to_start = target_set - running_set
             for cid in bots_to_start:
-                # Create a fresh copy of the config for the new process
-                process_args_dict = copy.deepcopy(base_args_dict)
+                # Create a deep copy of the config for the new process
+                process_config = copy.deepcopy(base_config)
 
-                # Assign a unique metrics port if needed
+                # Assign a unique metrics port
                 if cid in target_condition_ids:
                     port_offset = target_condition_ids.index(cid)
-                    # Ensure metrics_server_port is an integer before arithmetic
-                    base_port = int(process_args_dict.get("metrics_server_port", 9008))
-                    process_args_dict["metrics_server_port"] = base_port + port_offset
-
-                logger.info(f"Starting bot for {cid} on metrics port {process_args_dict['metrics_server_port']}")
+                    base_port = int(process_config.metrics_server_port)
+                    process_config.metrics_server_port = base_port + port_offset
                 
-                # It's good practice to convert the dict to a namespace object for cleaner access
-                config_for_process = types.SimpleNamespace(**process_args_dict)
+                logger.info(f"Starting bot for {cid} on metrics port {process_config.metrics_server_port}")
 
                 p = multiprocessing.Process(
                     target=run_market_maker,
-                    args=(config_for_process, cid) # Pass the final config object
+                    args=(process_config, cid) # Pass the final config object
                 )
                 p.start()
                 running_bots[cid] = p

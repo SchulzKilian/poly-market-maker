@@ -1,7 +1,7 @@
 from enum import Enum
 from py_clob_client.order_builder.constants import BUY, SELL
 
-from poly_market_maker.market import Token
+from market import Token
 
 
 class Side(Enum):

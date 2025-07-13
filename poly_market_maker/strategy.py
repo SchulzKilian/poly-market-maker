@@ -2,19 +2,20 @@ from enum import Enum
 import json
 import logging
 
-from poly_market_maker.orderbook import OrderBookManager
-from poly_market_maker.price_feed import PriceFeed
-from poly_market_maker.token import Token, Collateral
-from poly_market_maker.constants import MAX_DECIMALS
+from orderbook import OrderBookManager
+from price_feed import PriceFeed
+from token_class import Token, Collateral
+from constants import MAX_DECIMALS
 
-from poly_market_maker.strategies.base_strategy import BaseStrategy
-from poly_market_maker.strategies.amm_strategy import AMMStrategy
-from poly_market_maker.strategies.bands_strategy import BandsStrategy
+from strategies.base_strategy import BaseStrategy
+from strategies.amm_strategy import AMMStrategy
+from strategies.bands_strategy import BandsStrategy
 
 
 class Strategy(Enum):
     AMM = "amm"
     BANDS = "bands"
+    HJBE = "hjbe"
 
     @classmethod
     def _missing_(cls, value):
@@ -46,6 +47,8 @@ class StrategyManager:
                 self.strategy = AMMStrategy(config)
             case Strategy.BANDS:
                 self.strategy = BandsStrategy(config)
+            case Strategy.HJBE:
+                raise NotImplementedError("HJBE strategy is not implemented yet")
             case _:
                 raise Exception("Invalid strategy")
 

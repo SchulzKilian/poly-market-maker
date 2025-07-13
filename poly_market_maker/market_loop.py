@@ -1,19 +1,25 @@
 import requests
 import time
 import sys
+import json
+import os
 from datetime import datetime, timedelta, timezone
 from markets import get_polymarket_sports_markets
 from scoring import get_token_score
+from clob_api import ClobApi
 import traceback
 # --- Configuration ---
 
-
-
 # How often to perform actions (in seconds)
-MARKET_UPDATE_INTERVAL = 60 * 10  # Update the list of markets every 10 minutes
-SCORING_INTERVAL = 60 * 5       # Rescore all markets every 5 minutes
-CLEANUP_INTERVAL = 60 * 60      # Clean up inactive markets every hour
-LOOP_SLEEP_INTERVAL = 5         # Sleep time for the main loop to prevent high CPU usage
+MARKET_UPDATE_INTERVAL = 60 * 60 # Update the list of markets every 10 minutes
+SCORING_INTERVAL = 60 * 60     # Rescore all markets every 5 minutes
+CLEANUP_INTERVAL = 60 * 60 * 2    # Clean up inactive markets every hour
+LOOP_SLEEP_INTERVAL = 60 * 60        # Sleep time for the main loop to prevent high CPU usage
+
+# The file to write the top market condition_ids to
+MARKET_FILE = "markets_to_trade.json"
+# The number of top markets to select for market making
+TOP_N_MARKETS = 5
 
 # Scoring weights: Adjust these to prioritize what you find most important
 # For example, if you are very risk-averse, increase the VOLATILITY_WEIGHT.
@@ -22,12 +28,8 @@ WEIGHTS = {
     "SPREAD_SCORE": 0.35,
     "DEPTH_SCORE": 0.25,
     "VOLUME_SCORE": 0.25,
-    "VOLATILITY_SCORE": 0.15,
+    "VOLATILITY_SCORE": -0.15,
 }
-
-
-
-
 
 # --- Main Application Loop ---
 def main_loop():
@@ -35,6 +37,7 @@ def main_loop():
     last_market_update = 0
     last_scoring_update = 0
     last_cleanup = 0
+    clobapi = ClobApi(private_key=os.getenv("PRIVATE_KEY", None))
 
     print("🚀 Starting market maker scoring engine...")
 
@@ -60,76 +63,115 @@ def main_loop():
         if current_time - last_scoring_update > SCORING_INTERVAL:
             print("\n---")
             all_tokens = []
-            for market_obj in markets.values():
+            for condition_id, market_obj in markets.items():
+                if condition_id == "":
+                    continue
                 for token in market_obj.get('tokens', []):
-                    # Add market slug to each token for easier identification
+                    # Add market slug and condition_id to each token for easier identification
                     token['market_slug'] = market_obj.get('market_slug')
+                    token['condition_id'] = condition_id
+                    # print(condition_id)
+
                     all_tokens.append(token)
 
             print(f"[{datetime.now()}] 📊 Scoring all {len(all_tokens)} tracked tokens...")
 
-            # 1. Get raw scores for all tokens
-            raw_scores = []
-            for token in all_tokens[0:100]:
-                token_id = token.get('token_id')
-                if token_id:
-                    spread_score, depth_score, volume_score, volatility_score = get_token_score(token_id)
-                    raw_scores.append({
-                        'token': token,
-                        'spread': spread_score,
-                        'depth': depth_score,
-                        'volume': volume_score,
-                        'volatility': volatility_score
 
-                    })
+            if all_tokens:
+                # 1. Get raw scores for all tokens
+                raw_scores = []
 
-            # 2. Normalize scores
-            if raw_scores:
-                # Find min and max for each score type
-                min_spread = min(s['spread'] for s in raw_scores)
-                max_spread = max(s['spread'] for s in raw_scores)
-                min_depth = min(s['depth'] for s in raw_scores)
-                max_depth = max(s['depth'] for s in raw_scores)
-                min_volume = min(s['volume'] for s in raw_scores)
-                max_volume = max(s['volume'] for s in raw_scores)
+                volume_dict, liquidity_dict = clobapi.get_volume_and_liquidity([token['condition_id'] for token in all_tokens])
+                if volume_dict == {} or liquidity_dict == {}:
+                    print("⚠️ No volume or liquidity data found. Skipping scoring step.")
+                    break
+                for ind, token in enumerate(all_tokens):
+                    token_id = token.get('token_id')
+                    if token_id and token['condition_id'] in volume_dict and token['condition_id'] in liquidity_dict:
+                        spread_score, depth_score, volatility_score = get_token_score(token_id)
+                        raw_scores.append({
+                            'token': token,
+                            'spread': spread_score,
+                            'depth': depth_score,
+                            'volume': volume_dict[token['condition_id']],
+                            'liquidity': liquidity_dict[token['condition_id']],
+                            'volatility': float(volatility_score)
 
-                for score_data in raw_scores:
-                    # Normalize spread (lower is better)
-                    if max_spread > min_spread:
-                        norm_spread = 1 - ((score_data['spread'] - min_spread) / (max_spread - min_spread))
-                    else:
-                        norm_spread = 1.0
+                        })
 
-                    # Normalize depth (higher is better)
-                    if max_depth > min_depth:
-                        norm_depth = (score_data['depth'] - min_depth) / (max_depth - min_depth)
-                    else:
-                        norm_depth = 1.0
+                # 2. Normalize scores
+                if raw_scores:
+                    # Find min and max for each score type
+                    min_spread = min(s['spread'] for s in raw_scores)
+                    max_spread = max(s['spread'] for s in raw_scores)
+                    min_depth = min(s['depth'] for s in raw_scores)
+                    max_depth = max(s['depth'] for s in raw_scores)
+                    min_volume = min(s['volume'] for s in raw_scores)
+                    max_volume = max(s['volume'] for s in raw_scores)
+                    min_volatility = min(s['volatility'] for s in raw_scores)
+                    if min_volatility == 0:
+                        min_volatility = 1e-10
+                    max_volatility = max(s['volatility'] for s in raw_scores)
 
-                    # Normalize volume (higher is better)
-                    if max_volume > min_volume:
-                        norm_volume = (score_data['volume'] - min_volume) / (max_volume - min_volume)
-                    else:
-                        norm_volume = 1.0
-                    
-                    # 3. Calculate final weighted score
-                    final_score = 100 * (
-                        (norm_spread * WEIGHTS["SPREAD_SCORE"]) +
-                        (norm_depth * WEIGHTS["DEPTH_SCORE"]) +
-                        (norm_volume * WEIGHTS["VOLUME_SCORE"])
-                    )
-                    score_data['token']['score'] = final_score
+                    for score_data in raw_scores:
+                        # Normalize spread (lower is better)
+                        if max_spread > min_spread:
+                            norm_spread = 1 - ((score_data['spread'] - min_spread) / (max_spread - min_spread))
+                        else:
+                            norm_spread = 1.0
 
-            # Sort and print the top 10 tokens
+                        # Normalize depth (higher is better)
+                        if max_depth > min_depth:
+                            norm_depth = (score_data['depth'] - min_depth) / (max_depth - min_depth)
+                        else:
+                            norm_depth = 1.0
+
+                        # Normalize volume (higher is better)
+                        if max_volume > min_volume:
+                            norm_volume = (score_data['volume'] - min_volume) / (max_volume - min_volume)
+                        else:
+                            norm_volume = 1.0
+
+                        # Normalize volatility (lower is better)
+                        if max_volatility > min_volatility:
+                            norm_volatility = 1 - ((score_data['volatility'] - min_volatility) / (max_volatility - min_volatility))
+                        else:
+                            norm_volatility = 1.0
+                        
+                        # 3. Calculate final weighted score
+                        final_score = 100 * (
+                            (norm_spread * WEIGHTS["SPREAD_SCORE"]) +
+                            (norm_depth * WEIGHTS["DEPTH_SCORE"]) +
+                            (norm_volume * WEIGHTS["VOLUME_SCORE"]) + 
+                            (norm_volatility * WEIGHTS["VOLATILITY_SCORE"])
+                        )
+                        score_data['token']['score'] = final_score
+
+                else:
+                    print("⚠️ No tokens found to score. Skipping scoring step.")
+                    continue
+
+            else:
+                print("⚠️ No markets found to score. Skipping scoring step.")
+                continue
+            # Sort and get the top N tokens
             sorted_tokens = sorted(all_tokens, key=lambda t: t.get('score', 0), reverse=True)
+            top_tokens = sorted_tokens[:TOP_N_MARKETS]
             
-            print("\n🏆 Top 10 Tokens for Market Making (Normalized Scores):")
-            for token in sorted_tokens[:10]:
-                print(f"  - {token.get('score', 0):.2f} | {token.get('market_slug')} | Token ID: {token.get('token_id')}")
+            print(f"\n🏆 Top {TOP_N_MARKETS} Tokens for Market Making:")
+            for token in top_tokens:
+                print(f"  - {token.get('score', 0):.2f} | {token.get('market_slug')} | CID: {token.get('condition_id')}")
 
-            print("\n- Printing ten random tokens for verification:")
-            for token in all_tokens[:10]:
-                print(f"  - {token.get('score', 0):.2f} | {token.get('market_slug')} | Token ID: {token.get('token_id')}")
+            # Extract the condition_ids from the top tokens
+            top_condition_ids = list(set([token['condition_id'] for token in top_tokens]))
+
+            # Write the condition_ids to the file atomically
+            temp_file_path = f"{MARKET_FILE}.tmp"
+            with open(temp_file_path, 'w') as f:
+                json.dump(top_condition_ids, f)
+            os.rename(temp_file_path, MARKET_FILE)
+            
+            print(f"\n✅ Wrote {len(top_condition_ids)} market(s) to {MARKET_FILE}")
             last_scoring_update = current_time
             print("---\n")
 
@@ -140,9 +182,7 @@ def main_loop():
 
             print(f"[{datetime.now()}] 🧹 Cleaning up inactive markets...")
             initial_count = len(markets)
-            keys_to_delete = [
-                cid for cid, m in markets.items() if not m.get('active') or m.get('closed')
-            ]
+            keys_to_delete = clobapi.get_to_delete(markets.keys())
             
             if keys_to_delete:
                 for cid in keys_to_delete:
@@ -156,8 +196,8 @@ def main_loop():
             print("---\n")
         
         # Prevent the loop from running too fast
-        return
         time.sleep(LOOP_SLEEP_INTERVAL)
+        print(f"[{datetime.now()}] 💤 Sleeping for {LOOP_SLEEP_INTERVAL} seconds...\n")
 
 
 

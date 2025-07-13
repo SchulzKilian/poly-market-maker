@@ -4,7 +4,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, wait
 
-from poly_market_maker.order import Order, Side
+from order import Order, Side
 
 
 class OrderBook:

@@ -1,5 +1,5 @@
 import sys
-from poly_market_maker.app import App
+from app import App
 
 
 App(sys.argv[1:]).main()

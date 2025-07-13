@@ -1,8 +1,8 @@
 import logging
 from typing import Tuple
 
-from poly_market_maker.orderbook import OrderBook
-from poly_market_maker.order import Order
+from orderbook import OrderBook
+from order import Order
 
 
 class BaseStrategy:

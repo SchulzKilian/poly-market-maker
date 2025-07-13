@@ -1,9 +1,9 @@
 import itertools
 import logging
 
-from poly_market_maker.token import Token
-from poly_market_maker.constants import MIN_TICK, MIN_SIZE, MAX_DECIMALS
-from poly_market_maker.order import Order, Side
+from token_class import Token
+from constants import MIN_TICK, MIN_SIZE, MAX_DECIMALS
+from order import Order, Side
 
 
 class Band:

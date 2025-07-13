@@ -1,9 +1,9 @@
-from poly_market_maker.token import Token, Collateral
-from poly_market_maker.order import Order, Side
-from poly_market_maker.orderbook import OrderBook
+from token_class import Token, Collateral
+from order import Order, Side
+from orderbook import OrderBook
 
-from poly_market_maker.strategies.bands import Bands
-from poly_market_maker.strategies.base_strategy import BaseStrategy
+from strategies.bands import Bands
+from strategies.base_strategy import BaseStrategy
 
 
 class BandsStrategy(BaseStrategy):
