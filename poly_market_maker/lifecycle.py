@@ -92,16 +92,16 @@ class Lifecycle:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         # Initialization phase
-        self.logger.info("Initializing keeper lifecycle...")
+        self.logger.debug("Initializing keeper lifecycle...")
 
         # Initial delay
         if self.delay > 0:
-            self.logger.info(f"Waiting for {self.delay} seconds of initial delay...")
+            self.logger.debug(f"Waiting for {self.delay} seconds of initial delay...")
             time.sleep(self.delay)
 
         # Initial checks
         if len(self.wait_for_functions) > 0:
-            self.logger.info("Waiting for initial checks to pass...")
+            self.logger.debug("Waiting for initial checks to pass...")
 
             for index, (wait_for_function, max_wait) in enumerate(
                 self.wait_for_functions, start=1
@@ -129,7 +129,7 @@ class Lifecycle:
 
         # Startup phase
         if self.startup_function:
-            self.logger.info("Executing keeper startup logic...")
+            self.logger.debug("Executing keeper startup logic...")
             self.startup_function()
 
         # Bind `on_block`, bind `every`
@@ -142,15 +142,15 @@ class Lifecycle:
 
         # If any every (timer) callback is still running, wait for it to terminate
         if len(self.every_timers) > 0:
-            self.logger.info("Waiting for outstanding timers to terminate...")
+            self.logger.debug("Waiting for outstanding timers to terminate...")
             for timer in self.every_timers:
                 timer[1].wait()
 
         # Shutdown phase
         if self.shutdown_function:
-            self.logger.info("Executing keeper shutdown logic...")
+            self.logger.debug("Executing keeper shutdown logic...")
             self.shutdown_function()
-            self.logger.info("Shutdown logic finished")
+            self.logger.debug("Shutdown logic finished")
         self.logger.info("Keeper terminated")
         exit(10 if self.fatal_termination else 0)
 
@@ -247,7 +247,7 @@ class Lifecycle:
             self._start_every_timer(idx, timer[0], timer[1])
 
         if len(self.every_timers) > 0:
-            self.logger.info(f"Started {len(self.every_timers)} timer(s)")
+            self.logger.debug(f"Started {len(self.every_timers)} timer(s)")
 
     def _start_every_timer(self, idx: int, frequency_in_seconds: int, callback):
         def setup_timer(delay):

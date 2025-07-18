@@ -3,11 +3,16 @@ import time
 import sys
 import json
 import os
+import logging
+import os
+os.environ['SSL_CERT_FILE'] = '/home/kilianschulz/Applications/anaconda3/ssl/cacert.pem'
+
 from datetime import datetime, timedelta, timezone
 from markets import get_polymarket_sports_markets
 from scoring import get_token_score
 from clob_api import ClobApi
 import traceback
+from metrics import active_markets_gauge
 # --- Configuration ---
 
 # How often to perform actions (in seconds)
@@ -31,6 +36,8 @@ WEIGHTS = {
     "VOLATILITY_SCORE": -0.15,
 }
 
+logger = logging.getLogger(__name__)
+
 # --- Main Application Loop ---
 def main_loop():
     markets = {}
@@ -39,62 +46,67 @@ def main_loop():
     last_cleanup = 0
     clobapi = ClobApi(private_key=os.getenv("PRIVATE_KEY", None))
 
-    print("🚀 Starting market maker scoring engine...")
+    logger.info("🚀 Starting market maker scoring engine...")
 
     while True:
         current_time = time.time()
 
         # --- Task 1: Update the list of markets ---
         if current_time - last_market_update > MARKET_UPDATE_INTERVAL:
-            print("\n---")
-            print(f"[{datetime.now()}] 🔄 Updating market list...")
+            logger.info("\n---")
+            logger.info(f"[{datetime.now()}] 🔄 Updating market list...")
             try:
                 # This call adds new markets and updates data for existing ones
                 new_markets = get_polymarket_sports_markets()
+                print(f"New markets fetched: {len(new_markets)}")
+
                 markets.update(new_markets)
-                print(f"Found {len(new_markets)} new/updated markets. Total markets being tracked: {len(markets)}")
+                active_markets_gauge.set(len(markets))
+                logger.info(f"Found {len(new_markets)} new/updated markets. Total markets being tracked: {len(markets)}")
                 last_market_update = current_time
             except Exception as e:
-                print(f"❌ Failed to update markets: {e}")
-            print("---\n")
+                logger.error(f"❌ Failed to update markets: {e}")
+            logger.info("---\n")
 
 
         # --- Task 2: Update the scoring for each token ---
         if current_time - last_scoring_update > SCORING_INTERVAL:
-            print("\n---")
+            logger.info("\n---")
             all_tokens = []
+
             for condition_id, market_obj in markets.items():
+
                 if condition_id == "":
                     continue
-                for token in market_obj.get('tokens', []):
+
+                for token_id in json.loads(market_obj.get('clobTokenIds', [])):
+                    # print(token_id)
+                    token = {}
+                    token['token_id'] = token_id
                     # Add market slug and condition_id to each token for easier identification
-                    token['market_slug'] = market_obj.get('market_slug')
+                    token['market'] = market_obj
                     token['condition_id'] = condition_id
-                    # print(condition_id)
 
                     all_tokens.append(token)
+            logger.setLevel(logging.INFO)
+            logger.info(f"[{datetime.now()}] 📊 Scoring all {len(all_tokens)} tracked tokens...")
 
-            print(f"[{datetime.now()}] 📊 Scoring all {len(all_tokens)} tracked tokens...")
-
-
+            logger.info(f"Found {len(all_tokens)} tokens to score.")
             if all_tokens:
                 # 1. Get raw scores for all tokens
                 raw_scores = []
 
-                volume_dict, liquidity_dict = clobapi.get_volume_and_liquidity([token['condition_id'] for token in all_tokens])
-                if volume_dict == {} or liquidity_dict == {}:
-                    print("⚠️ No volume or liquidity data found. Skipping scoring step.")
-                    break
+
                 for ind, token in enumerate(all_tokens):
                     token_id = token.get('token_id')
-                    if token_id and token['condition_id'] in volume_dict and token['condition_id'] in liquidity_dict:
+                    if token_id:
                         spread_score, depth_score, volatility_score = get_token_score(token_id)
                         raw_scores.append({
                             'token': token,
                             'spread': spread_score,
                             'depth': depth_score,
-                            'volume': volume_dict[token['condition_id']],
-                            'liquidity': liquidity_dict[token['condition_id']],
+                            'volume': float(token['market'].get('volume', 0)),
+                            'liquidity': float(token['market'].get('liquidity', 0)),
                             'volatility': float(volatility_score)
 
                         })
@@ -146,21 +158,22 @@ def main_loop():
                             (norm_volatility * WEIGHTS["VOLATILITY_SCORE"])
                         )
                         score_data['token']['score'] = final_score
+                        print(f"The final score for token {score_data['token']['token_id']} is {final_score:.2f}")
 
                 else:
-                    print("⚠️ No tokens found to score. Skipping scoring step.")
+                    logger.warning("⚠️ No tokens found to score. Skipping scoring step.")
                     continue
 
             else:
-                print("⚠️ No markets found to score. Skipping scoring step.")
+                logger.warning("⚠️ No markets found to score. Skipping scoring step.")
                 continue
             # Sort and get the top N tokens
             sorted_tokens = sorted(all_tokens, key=lambda t: t.get('score', 0), reverse=True)
             top_tokens = sorted_tokens[:TOP_N_MARKETS]
             
-            print(f"\n🏆 Top {TOP_N_MARKETS} Tokens for Market Making:")
+            logger.info(f"\n🏆 Top {TOP_N_MARKETS} Tokens for Market Making:")
             for token in top_tokens:
-                print(f"  - {token.get('score', 0):.2f} | {token.get('market_slug')} | CID: {token.get('condition_id')}")
+                logger.info(f"  - {token.get('score', 0):.2f} | {token.get('market_slug')} | CID: {token.get('condition_id')}")
 
             # Extract the condition_ids from the top tokens
             top_condition_ids = list(set([token['condition_id'] for token in top_tokens]))
@@ -171,33 +184,33 @@ def main_loop():
                 json.dump(top_condition_ids, f)
             os.rename(temp_file_path, MARKET_FILE)
             
-            print(f"\n✅ Wrote {len(top_condition_ids)} market(s) to {MARKET_FILE}")
+            logger.info(f"\n✅ Wrote {len(top_condition_ids)} market(s) to {MARKET_FILE}")
             last_scoring_update = current_time
-            print("---\n")
+            logger.info("---\n")
 
 
         # --- Task 3: Delete inactive/closed markets ---
         if current_time - last_cleanup > CLEANUP_INTERVAL:
-            print("\n---")
+            logger.info("\n---")
 
-            print(f"[{datetime.now()}] 🧹 Cleaning up inactive markets...")
+            logger.info(f"[{datetime.now()}] 🧹 Cleaning up inactive markets...")
             initial_count = len(markets)
             keys_to_delete = clobapi.get_to_delete(markets.keys())
             
             if keys_to_delete:
                 for cid in keys_to_delete:
                     del markets[cid]
-                print(f"Removed {len(keys_to_delete)} inactive/closed markets.")
+                logger.info(f"Removed {len(keys_to_delete)} inactive/closed markets.")
             else:
-                print("No inactive markets to remove.")
+                logger.info("No inactive markets to remove.")
             
-            print(f"Markets being tracked: {len(markets)}")
+            logger.info(f"Markets being tracked: {len(markets)}")
             last_cleanup = current_time
-            print("---\n")
+            logger.info("---\n")
         
         # Prevent the loop from running too fast
         time.sleep(LOOP_SLEEP_INTERVAL)
-        print(f"[{datetime.now()}] 💤 Sleeping for {LOOP_SLEEP_INTERVAL} seconds...\n")
+        logger.info(f"[{datetime.now()}] 💤 Sleeping for {LOOP_SLEEP_INTERVAL} seconds...\n")
 
 
 
@@ -205,11 +218,11 @@ if __name__ == "__main__":
     try:
         main_loop()
     except KeyboardInterrupt:
-        print("\n🛑 Stopping market maker scoring engine...")
+        logger.info("\n🛑 Stopping market maker scoring engine...")
         sys.exit(0)
     except Exception as e:
-        print(f"❌ An error occurred: {e}")
-        print(traceback.format_exc())
+        logger.error(f"❌ An error occurred: {e}")
+        logger.error(traceback.format_exc())
         sys.exit(1)
 
 

@@ -42,7 +42,7 @@ def setup_logging(
 
 
 def setup_web3(rpc_url, private_key):
-    w3 = Web3(Web3.HTTPProvider(rpc_url))
+    w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 60}))
 
     # Middleware to sign transactions from a private key
     # ExtraDataToPOAMiddleware should be injected at layer 0 as it modifies extraData field

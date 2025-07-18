@@ -2,6 +2,7 @@ import multiprocessing
 import sys
 import copy
 import time
+from strategy import Strategy
 import json
 import os
 import logging
@@ -9,21 +10,14 @@ import types
 from enum import Enum
 from app import App
 from dotenv import load_dotenv
-
-# --- Configuration is now handled directly in this file ---
+from utils import setup_logging
 
 # 1. Load environment variables from a .env file into the OS environment.
 # This should be done at the very top of the script.
 load_dotenv()
 
-# 2. Define a placeholder for the Strategy Enum to make the script runnable.
-class Strategy(Enum):
-    AMM = "AMM"
-    BANDS = "Bands"
-    def __str__(self):
-        return self.value
-
 # 3. Define all default configuration values in a single dictionary.
+
 DEFAULT_CONFIG = {
     "private_key": None,
     "rpc_url": None,
@@ -37,15 +31,8 @@ DEFAULT_CONFIG = {
     "fixed_gas_price": None,
     "metrics_server_port": 9008,
     "strategy": Strategy.AMM,
-    "strategy_config": "config/strategy.yaml",
+    "strategy_config": f"../config/amm.json",
 }
-
-def setup_logging():
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s %(levelname)-8s %(threadName)-12s %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
 
 # --- Main Application Logic ---
 
@@ -58,7 +45,6 @@ def run_market_maker(config_obj, condition_id: str):
     This function is the target for the multiprocessing.Process.
     It receives a ready-to-use configuration object.
     """
-    setup_logging()
     logger = logging.getLogger(__name__)
     logger.info(f"Starting market maker bot for condition_id: {condition_id}")
     try:

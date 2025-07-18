@@ -17,7 +17,7 @@ class Market:
             Token.B: CTHelpers.get_token_id(condition_id, collateral_address, 1),
         }
 
-        self.logger.info(f"Initialized Market: {self}")
+        self.logger.debug(f"Initialized Market: {self}")
 
     def __repr__(self):
         return f"Market[condition_id={self.condition_id}, token_id_a={self.token_ids[Token.A]}, token_id_b={self.token_ids[Token.B]}]"

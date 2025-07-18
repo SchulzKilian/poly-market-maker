@@ -2,7 +2,7 @@ import logging
 import sys
 import time
 import requests
-from py_clob_client.client import ClobClient, ApiCreds, OrderArgs
+from py_clob_client.client import ClobClient, ApiCreds, OrderArgs, OpenOrderParams, TradeParams
 from py_clob_client.exceptions import PolyApiException
 import pickle
 
@@ -15,6 +15,8 @@ DEFAULT_PRICE = 0.5
 class ClobApi:
     def __init__(self, host= "https://clob.polymarket.com", chain_id= 137, private_key= None):
         self.logger = logging.getLogger(self.__class__.__name__)
+        import os
+        os.environ['SSL_CERT_FILE'] = '/home/kilianschulz/Applications/anaconda3/ssl/cacert.pem'
         if private_key:
             self.client = self._init_client_L1(
                 host=host,
@@ -52,6 +54,7 @@ class ClobApi:
         return self.client.get_exchange_address(neg_risk)
 
     def get_price(self, token_id: int, side: str = None) -> float:
+        self.logger.setLevel(logging.DEBUG)
         """
         Get the current price on the orderbook
         """
@@ -60,9 +63,13 @@ class ClobApi:
         try:
             if side:
                 resp = self.client.get_price(token_id, side)
+
                 price = resp.get("price")
             else:
+                self.logger.debug("No side provided, fetching midpoint price.")
                 resp = self.client.get_midpoint(token_id)
+                self.logger.debug(f"Midpoint response: {resp}")
+                self.logger.info(f"Midpoint response for {token_id=}: {resp}")
                 price = resp.get("mid")
 
             clob_requests_latency.labels(method="get_price", status="ok").observe(
@@ -76,6 +83,8 @@ class ClobApi:
                 (time.time() - start_time)
             )
         # TODO Return None and handle it in the caller
+        self.logger.setLevel(logging.WARNING)
+        
         return None
 
     def get_book(self, token_id: int):
@@ -87,8 +96,8 @@ class ClobApi:
         try:
             api_url = "https://clob.polymarket.com/book"
             parameters = {"token_id": token_id}
-            response = requests.get(api_url, params=parameters)
-            logging.debug(f"Response: {response.text}")
+            response = requests.get(api_url, params=parameters, timeout=10)
+            self.logger.debug(f"Response: {response.text}")
             clob_requests_latency.labels(method="get_orderbook", status="ok").observe(
                 (time.time() - start_time)
             )
@@ -109,7 +118,7 @@ class ClobApi:
         try:
             api_url = "https://clob.polymarket.com/prices-history"
             parameters = {"market": token_id, "interval": "max"}# "startTs": start_ts, "endTs": end_ts}
-            response = requests.get(api_url, params=parameters)
+            response = requests.get(api_url, params=parameters, timeout=10)
 
             clob_requests_latency.labels(method="get_price_history", status="ok").observe(
                 (time.time() - start_time)
@@ -130,7 +139,7 @@ class ClobApi:
         start_time = time.time()
         try:
             # Assuming the client has a get_trades method that can filter by token_id
-            resp = self.client.get_trades(FilterParams(token_id=token_id))
+            resp = self.client.get_trades(TradeParams(token_id=token_id))
             clob_requests_latency.labels(method="get_trades", status="ok").observe(
                 (time.time() - start_time)
             )
@@ -152,7 +161,7 @@ class ClobApi:
         self.logger.debug("Fetching open keeper orders from the API...")
         start_time = time.time()
         try:
-            resp = self.client.get_orders(FilterParams(market=condition_id))
+            resp = self.client.get_orders(OpenOrderParams(market=condition_id))
             clob_requests_latency.labels(method="get_orders", status="ok").observe(
                 (time.time() - start_time)
             )
@@ -185,7 +194,7 @@ class ClobApi:
             order_id = None
             if resp and resp.get("success") and resp.get("orderID"):
                 order_id = resp.get("orderID")
-                self.logger.debug(
+                self.logger.info(
                     f"Successfully placed {side} order for token {token_id}. Order ID: {order_id}"
                 )
                 return order_id
@@ -214,7 +223,7 @@ class ClobApi:
                 (time.time() - start_time)
             )
             if resp == OK:
-                self.logger.debug(f"Successfully cancelled order {order_id}.")
+                self.logger.info(f"Successfully cancelled order {order_id}.")
                 return True
             else:
                 self.logger.error(f"Failed to cancel order {order_id}.")
@@ -235,7 +244,7 @@ class ClobApi:
                 (time.time() - start_time)
             )
             if resp == OK:
-                self.logger.debug("Successfully cancelled all orders.")
+                self.logger.info("Successfully cancelled all orders.")
                 return True
             else:
                 self.logger.error("Failed to cancel all orders.")
@@ -248,6 +257,7 @@ class ClobApi:
         return False
     
     def get_volume_and_liquidity(self, condition_ids: list[str]):
+        self.logger.setLevel(logging.DEBUG)
         if not condition_ids:
             return {}, {}
 
@@ -262,7 +272,7 @@ class ClobApi:
             test_chunk = current_chunk + [cid]
             query_string = urllib.parse.urlencode({"condition_ids": test_chunk}, doseq=True)
 
-            if len(gamma_url) + 1 + len(query_string) > 2000:
+            if len(gamma_url) + 70 + len(query_string) > 2000:
                 if current_chunk:
                     all_chunks.append(current_chunk)
                 current_chunk = [cid]
@@ -274,22 +284,35 @@ class ClobApi:
 
         for chunk in all_chunks:
             parameters = {
-                "condition_ids": chunk
+                "condition_ids": chunk,
+                "active": True,
+                "closed": False,
+                "accepting_orders": True,
+                "liquidity_num_min": 100000
             }
 
             try:
+
                 response = requests.get(gamma_url, params=parameters)
+
                 if response.status_code != 200:
                     self.logger.error(f"Error fetching volume from Gamma API {response.status_code} with {response.text}   ")
                     continue
-
-                data = response.json()
-
+                try:
+                    data = response.json()
+                except ValueError as e:
+                    self.logger.error(f"Error parsing JSON response from Gamma API: {e}")
+                    continue    
+                
                 for market in data:
-                    condition_id = market.get("condition_id")
+                    condition_id = market.get("conditionId")
                     if condition_id in chunk:
+
                         volume_data[condition_id] = market.get("volumeNum", 0)
                         liquidity_data[condition_id] = market.get("liquidityNum", 0)
+                    else:
+                        continue
+
             except Exception as e:
                 self.logger.error(f"Exception fetching volume from Gamma API: {e}")
 
@@ -376,20 +399,23 @@ class ClobApi:
         chain_id,
         private_key,
     ) -> ClobClient:
-        assert private_key is not None, "Private key must be provided for CLOB API client initialization"
-        assert host is not None, "Host must be provided for CLOB API client initialization"
-        print(f"Connecting to CLOB API at {host} with chain ID {chain_id}...")
-        print(f"Using private key: {private_key[:6]}...{private_key[-6:]}")
+
         clob_client = ClobClient(host, chain_id, private_key)
         try:
             if clob_client.get_ok() == OK:
-                self.logger.info("Connected to CLOB API!")
+                self.logger.info("Connected to CLOB API! L1")
                 self.logger.info(
                     "CLOB Keeper address: {}".format(clob_client.get_address())
                 )
                 return clob_client
+
+        except PolyApiException as e:
+
+            self.logger.error("Unable to connect on L1, shutting down!")
+            sys.exit(1)
         except Exception as e  :
             self.logger.error(f"Error connecting to CLOB API: {e}")
+            print(e.with_traceback)
             self.logger.error("Unable to connect to CLOB API L1, shutting down!")
             sys.exit(1)
 
@@ -402,7 +428,7 @@ class ClobApi:
         clob_client = ClobClient(host, chain_id, private_key, creds)
         try:
             if clob_client.get_ok() == OK:
-                self.logger.info("Connected to CLOB API!")
+                self.logger.info("Connected to CLOB API! L2")
                 self.logger.info(
                     "CLOB Keeper address: {}".format(clob_client.get_address())
                 )

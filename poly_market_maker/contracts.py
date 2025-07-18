@@ -91,9 +91,13 @@ class Contracts:
         return approved
 
     def max_approve_erc20(self, token: str, owner: str, spender: str):
+
+        # self.logger.setLevel(level=logging.DEBUG)
+        self.logger.debug(f"Checking approval for {token} on {spender}...")
+        # Check if already approved
         if not self.is_approved_erc20(token, owner, spender):
             erc20 = self.w3.eth.contract(token, abi=erc20_approve)
-            self.logger.info(
+            self.logger.debug(
                 f"Max approving ERC20 token {token} on spender {spender}..."
             )
 
@@ -107,24 +111,51 @@ class Contracts:
                 chain_requests_counter.labels(method="approve", status="error").inc()
                 raise e
 
-            txn_hash_hex = self.w3.toHex(txn_hash_bytes)
-            self.logger.info(f"ERC20 approve transaction hash: {txn_hash_hex}")
+            txn_hash_hex = self.w3.to_hex(txn_hash_bytes)
+            self.logger.debug(f"ERC20 approve transaction hash: {txn_hash_hex}")
+            # self.logger.setLevel(level=logging.INFO)
             return txn_hash_hex
-
+        else:
+            self.logger.debug(f"ERC20 token {token} is already approved for {spender}")
+            # self.logger.setLevel(level=logging.INFO)
+            return None
     def max_approve_erc1155(self, token: str, owner: str, spender: str):
+        # self.logger.setLevel(level=logging.DEBUG)
         if not self.is_approved_erc1155(token, owner, spender):
-            self.logger.info(
+            self.logger.debug(
                 f"Max approving ERC1155 token {token} on spender {spender}..."
             )
             erc1155 = self.w3.eth.contract(token, abi=erc1155_set_approval)
-
+            self.logger.debug(f"Checking approval for {token} on {spender}...")
+            gas_price = self.gas_station.get_gas_price() # Get the gas price
+            self.logger.debug(f"Submitting transaction with gas price: {gas_price}")
             try:
-                txn_hash_bytes = erc1155.functions.setApprovalForAll(
-                    spender, True
-                ).transact({"gasPrice": self.gas_station.get_gas_price()})
-                chain_requests_counter.labels(
-                    method="setApprovalForAll", status="ok"
-                ).inc()
+
+                approval_func = erc1155.functions.setApprovalForAll(spender, True)
+                self.logger.debug(
+                    f"Finished the approval function on token {token} for spender {spender}..."
+                )
+
+                gas_limit = approval_func.estimate_gas({'from': owner})
+
+                self.logger.debug(
+                    f"Finished the gas limit estimation..."
+                )
+
+                nonce = self.w3.eth.get_transaction_count(owner)
+
+                self.logger.debug(f"Nonce for {owner}: {nonce}")
+
+                transaction = {
+                    'from': owner,
+                    'gasPrice': gas_price,
+                    'gas': gas_limit,
+                    'nonce': nonce,
+                }
+
+                txn_hash_bytes = approval_func.transact(transaction)
+                self.logger.debug(
+                    f"Max approved ERC1155 token {token} for spender {spender}")
             except Exception as e:
                 self.logger.error(f"Error setApprovalForAll: {e}")
                 chain_requests_counter.labels(
@@ -132,8 +163,9 @@ class Contracts:
                 ).inc()
                 raise e
 
-            txn_hash_hex = self.w3.toHex(txn_hash_bytes)
-            self.logger.info(f"ERC1155 approve transaction hash: {txn_hash_hex}")
+            txn_hash_hex = self.w3.to_hex(txn_hash_bytes)
+            self.logger.debug(f"ERC1155 approve transaction hash: {txn_hash_hex}")
+            # self.logger.setLevel(level=logging.INFO)
             return txn_hash_hex
 
     def token_balance_of(self, token: str, address: str, token_id=None):
@@ -154,4 +186,4 @@ class Contracts:
             chain_requests_counter.labels(method="get_balance", status="error").inc()
             raise e
 
-        return self.w3.fromWei(bal, "ether")
+        return self.w3.from_wei(bal, "ether")

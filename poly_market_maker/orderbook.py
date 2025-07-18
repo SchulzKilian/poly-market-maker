@@ -124,6 +124,7 @@ class OrderBookManager:
         threading.Thread(target=self._thread_refresh_order_book, daemon=True).start()
 
     def get_order_book(self) -> OrderBook:
+        self.logger.setLevel(logging.DEBUG)
         """
         Returns the current snapshot of the active keeper orders and balances.
         """
@@ -171,6 +172,7 @@ class OrderBookManager:
                 self.logger.debug(
                     f"Open keeper orders: {[order.id for order in orders]}"
                 )
+        self.logger.debug(f"Open keeper orders: {len(orders)}   order(s)")
 
         return OrderBook(
             orders=orders,
@@ -192,10 +194,9 @@ class OrderBookManager:
 
         self._report_order_book_updated()
 
-        result = self._executor.submit(
+        self._executor.submit(
             self._thread_place_order(place_order_function, order)
         )
-        wait([result])
 
     def place_orders(self, orders: list[Order]):
         """Places new orders. Order placement will happen in a background thread.
@@ -211,13 +212,12 @@ class OrderBookManager:
 
         self._report_order_book_updated()
 
-        results = [
+        [
             self._executor.submit(
                 self._thread_place_order(self.place_order_function, order)
             )
             for order in orders
         ]
-        wait(results)
 
     def cancel_orders(self, orders: list[Order]):
         """
@@ -226,7 +226,7 @@ class OrderBookManager:
         Args:
             orders: List of orders to cancel.
         """
-        self.logger.info("Cancelling orders...")
+        self.logger.debug("Cancelling orders...")
         assert isinstance(orders, list)
         assert callable(self.cancel_order_function)
 
@@ -236,13 +236,12 @@ class OrderBookManager:
 
         self._report_order_book_updated()
 
-        results = [
+        [
             self._executor.submit(
                 self._thread_cancel_order(self.cancel_order_function, order)
             )
             for order in orders
         ]
-        wait(results)
 
     def cancel_all_orders(self):
         """
@@ -261,34 +260,15 @@ class OrderBookManager:
             self.logger.info(f"Cancelling {len(order_ids)} open orders...")
 
             # Cancel all orders
-            result = self._executor.submit(
+            self._executor.submit(
                 self._thread_cancel_all_orders(self.cancel_all_orders_function, orders)
             )
-            wait([result])
-            self.wait_for_stable_order_book()
-            time.sleep(2)
-
-        # Wait for the background thread to refresh the order book twice, so we are 99.9% sure
-        # that there are no orders left in the backend.
-        #
-        # The reason we wait twice for the order book refresh is that the first refresh might have
-        # started still while the orders were still being cancelled. By waiting twice we are sure that the
-        # second refresh has started after the whole order cancellation process was already finished.
-        self.logger.info(
-            "No open orders. Waiting for the order book to refresh twice just to be sure..."
-        )
-        self.wait_for_order_book_refresh()
-        self.wait_for_order_book_refresh()
-
-        orders = self.get_order_book().orders
-        if len(orders) > 0:
-            # TODO: not repeating the cancel_all since it could lead to an infinite recursion
-            # self.logger.info(f"There are still {len(orders)} open orders! Repeating the cancel_all_orders function!")
-            # return self.cancel_all_orders()
-            self.logger.info(f"There are still {len(orders)} open keeper orders!")
-            return
-
-        self.logger.info("All orders successfully cancelled!")
+            self.wait_for_order_book_refresh()
+        
+    def wait_for_order_book_ready(self):
+        """Wait until the order book is ready."""
+        while self._state is None:
+            time.sleep(0.1)
 
     def wait_for_order_cancellation(self):
         """Wait until no background order cancellation takes place."""

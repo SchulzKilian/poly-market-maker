@@ -88,7 +88,7 @@ class Band:
             band_amount -= order.size
 
         if len(orders_for_cancellation) > 0:
-            self.logger.info(
+            self.logger.debug(
                 f"Band (spread <{self.min_margin}, {self.max_margin}>,"
                 f" amount <{self.min_amount}, {self.max_amount}>) has amount {orders_total_size}, scheduling"
                 f" {len(orders_for_cancellation)} order(s) for cancellation: {', '.join(map(lambda order: '#' + str(order.id), orders_for_cancellation))}"
@@ -190,7 +190,7 @@ class Bands:
 
         for order in orders:
             if not any(band.includes(order, target_price) for band in bands):
-                self.logger.info(
+                self.logger.debug(
                     f"Order #{order.id} doesn't belong to any band, scheduling it for cancellation"
                 )
                 yield order

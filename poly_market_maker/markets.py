@@ -1,52 +1,27 @@
 import pickle  
 import requests
+import logging
 from datetime import datetime, timedelta, timezone
-GET_NEW_CURSOR = True
 
+
+logger = logging.getLogger(__name__)
 
 def get_polymarket_sports_markets():
-    global GET_NEW_CURSOR
-    try:
-        with open('next_cursor.pkl', 'rb') as file:
-            # Deserialize the string from the file
-            next_cursor = pickle.load(file)
-    except:
-        next_cursor = ""
 
 
 
 
-    all_markets = []
-
-    while True:
-        url = f"https://clob.polymarket.com/markets?next_cursor={next_cursor}" 
-
-        response = requests.get(url)
-        data = response.json()
-
-        if response.status_code != 200 or 'data' not in data:
-            print("Error fetching markets")
-            break
 
 
-        if GET_NEW_CURSOR:
-            for item in data["data"]:
-                if item.get('active') and not item.get('closed'):
-                    GET_NEW_CURSOR = False
-                    with open('next_cursor.pkl', 'wb') as file:
-                        pickle.dump(next_cursor, file)
-                    break
+    # url = f"https://clob.polymarket.com/markets?next_cursor={next_cursor}" 
+    url = f"https://gamma-api.polymarket.com/markets?limit=40&active=true&closed=false&order=liquidity"
 
-        next_cursor = data.get('next_cursor', '')
+    response = requests.get(url)
+    data = response.json()
+
+    response.raise_for_status()
 
 
-        
-
-        all_markets.extend(data['data'])
-        if next_cursor == '' or next_cursor == 'LTE=':
-            break
-        
-        
 
 
 
@@ -54,10 +29,11 @@ def get_polymarket_sports_markets():
 
     # Format each market
     formatted_markets = {}
-    for market in all_markets:
+
+    for market in data:
         if type(market)!= str:
-            if market.get('active') and not market.get('closed') and market.get('accepting_orders') and market.get('condition_id') and is_end_date_valid(market.get('end_date_iso')):
-                condition_id = market.get('condition_id') 
+            if market.get('active') and not market.get('closed') and market.get('enableOrderBook') and is_end_date_valid(market.get('end_date')):
+                condition_id = market.get('id') 
                 formatted_market = {
                     'question': market.get('question'),
                     'description': market.get('description'),
@@ -72,16 +48,16 @@ def get_polymarket_sports_markets():
                 formatted_markets[condition_id] = market
                 if condition_id == '':
                     import sys
-                    print(f"Skipping market with empty condition_id: {market}")
+                    logger.error(f"Skipping market with empty condition_id: {market}")
                     sys.exit(0)
             else:
+                print(f"Skipping market {market.get('id')} due to conditions: active={market.get('active')}, closed={market.get('closed')}, accepting_orders={market.get('accepting_orders')}, condition_id={market.get('condition_id')}, end_date_iso={market.get('end_date_iso')}")
                 continue
         else:
             continue
 
 
             
-
     return formatted_markets
 
 def is_end_date_valid(end_date_iso: str | None) -> bool:
@@ -111,6 +87,6 @@ if __name__ == "__main__":
     markets = get_polymarket_sports_markets()
     for keys in markets.keys():
         market = markets[keys]
-        print(market)
+        # logger.info(market)
         assert market["active"] and not market["closed"], "Market is not active or closed"
-    print(f"Total markets fetched: {len(markets)}")
+    logger.info(f"Total markets fetched: {len(markets)}")

@@ -63,6 +63,11 @@ class StrategyManager:
 
         token_prices = self.get_token_prices()
         self.logger.debug(f"{token_prices}")
+
+        if token_prices[Token.A] == -1:
+            self.logger.warning("Invalid token price. Not placing new orders.")
+            return
+
         (orders_to_cancel, orders_to_place) = self.strategy.get_orders(
             orderbook, token_prices
         )
@@ -76,7 +81,10 @@ class StrategyManager:
         self.logger.debug("Synchronized strategy!")
 
     def get_order_book(self):
+        self.logger.setLevel(logging.DEBUG)
         orderbook = self.order_book_manager.get_order_book()
+        self.logger.debug(f"Orderbook: {orderbook.balances}")
+        self.logger.debug(f"Orderbook: {orderbook.orders}")
 
         if None in orderbook.balances.values():
             self.logger.debug("Balances invalid/non-existent")
@@ -89,10 +97,19 @@ class StrategyManager:
         return orderbook
 
     def get_token_prices(self):
+
+        price = self.price_feed.get_price(Token.A)
+        if price is None:
+            return {
+                Token.A: -1,
+                Token.B: -1
+            }
+
         price_a = round(
-            self.price_feed.get_price(Token.A),
+            price,
             MAX_DECIMALS,
         )
+
         price_b = round(1 - price_a, MAX_DECIMALS)
         return {Token.A: price_a, Token.B: price_b}
 

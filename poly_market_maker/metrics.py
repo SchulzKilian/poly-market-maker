@@ -25,3 +25,19 @@ gas_station_latency = Histogram(
     labelnames=["strategy", "status"],
     namespace="market_maker",
 )
+active_markets_gauge = Gauge(
+    "active_markets",
+    "Number of active markets",
+    namespace="market_maker",
+)
+orders_placed_counter = Counter(
+    "orders_placed",
+    "Number of orders placed",
+    labelnames=["side"],
+    namespace="market_maker",
+)
+profit_and_loss_gauge = Gauge(
+    "profit_and_loss",
+    "Profit and loss",
+    namespace="market_maker",
+)

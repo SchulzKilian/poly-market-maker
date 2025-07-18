@@ -13,7 +13,7 @@ from clob_api import ClobApi
 from lifecycle import Lifecycle
 from orderbook import OrderBookManager
 from contracts import Contracts
-from metrics import keeper_balance_amount
+from metrics import keeper_balance_amount, orders_placed_counter, profit_and_loss_gauge
 from strategy import StrategyManager
 import types
 
@@ -21,6 +21,7 @@ class App:
     """Market maker keeper on Polymarket CLOB"""
 
     def __init__(self, config, condition_id: str = None):
+        setup_logging()
         self.logger = logging.getLogger(__name__)
 
         self.sync_interval = 5
@@ -76,6 +77,8 @@ class App:
             self.price_feed,
             self.order_book_manager,
         )
+        self.last_balance = None
+        self.starting_balance = None
 
     """
     main
@@ -95,7 +98,8 @@ class App:
     def startup(self):
         self.logger.info("Running startup callback...")
         self.approve()
-        time.sleep(5)  # 5 second initial delay so that bg threads fetch the orderbook
+        self.logger.info("Approvals done!")
+        self.order_book_manager.wait_for_order_book_ready()
         self.logger.info("Startup complete!")
 
     def synchronize(self):
@@ -160,11 +164,39 @@ class App:
             tokenid="-1",
         ).set(gas_balance)
 
-        return {
+        current_balance = {
             Collateral: collateral_balance,
             Token.A: token_A_balance,
             Token.B: token_B_balance,
         }
+
+        if self.starting_balance is None:
+            self.starting_balance = current_balance
+
+        if self.last_balance:
+            for token, balance in current_balance.items():
+                if token in self.last_balance:
+                    balance_change = balance - self.last_balance[token]
+                    if balance_change != 0:
+                        self.logger.info(f"Balance change for {token}: {balance_change:+.2f}. New balance: {balance:.2f}")
+
+        self.last_balance = current_balance
+
+        # Calculate PnL
+        try:
+            price_A = self.price_feed.get_price(Token.A)
+            if price_A is not None:
+                price_B = 1 - price_A
+                
+                pnl = (current_balance[Collateral] - self.starting_balance[Collateral]) + \
+                      ((current_balance[Token.A] - self.starting_balance[Token.A]) * price_A) + \
+                      ((current_balance[Token.B] - self.starting_balance[Token.B]) * price_B)
+
+                profit_and_loss_gauge.set(pnl)
+        except Exception as e:
+            self.logger.error(f"Could not calculate PnL: {e}")
+
+        return current_balance
 
     def get_orders(self) -> list[Order]:
         orders = self.clob_api.get_orders(self.market.condition_id)
@@ -180,6 +212,10 @@ class App:
         ]
 
     def place_order(self, new_order: Order) -> Order:
+        self.logger.info(f"Placing order: {new_order.side.value} {new_order.size} of {new_order.token} at {new_order.price}")
+        orders_placed_counter.labels(
+            side=new_order.side.value
+        ).inc()
         order_id = self.clob_api.place_order(
             price=new_order.price,
             size=new_order.size,
@@ -198,9 +234,16 @@ class App:
         """
         Approve the keeper on the collateral and conditional tokens
         """
+        self.logger.debug("Approving tokens for the keeper...")
         collateral = self.clob_api.get_collateral_address()
+        if not collateral:
+            self.logger.error("Collateral address is not set. Cannot approve.")
+            return
         conditional = self.clob_api.get_conditional_address()
         exchange = self.clob_api.get_exchange()
-
+        self.logger.debug(f"Approving {collateral} and {conditional} for {exchange}")
         self.contracts.max_approve_erc20(collateral, self.address, exchange)
+
         self.contracts.max_approve_erc1155(conditional, self.address, exchange)
+
+        self.logger.debug("Approvals done!")

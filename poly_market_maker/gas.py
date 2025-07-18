@@ -43,7 +43,7 @@ class GasStation:
                 gas = self.fixed
 
             if self.strat == GasStrategy.WEB3:
-                rpc_gas_price = self.w3.eth.generate_gas_price()
+                rpc_gas_price = self.w3.eth.gas_price
                 gas = rpc_gas_price
 
             if self.strat == GasStrategy.STATION:
@@ -54,7 +54,7 @@ class GasStation:
                 (time.time() - start_time)
             )
 
-            self.logger.info(f"Gas: {gas}")
+            self.logger.debug(f"Gas: {gas}")
         except Exception as e:
             self.logger.error(
                 f"Error fetching gas from gas station, strategy: {self.strat.value.upper()}: {e}"
