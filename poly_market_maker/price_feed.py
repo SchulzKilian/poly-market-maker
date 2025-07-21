@@ -33,9 +33,12 @@ class PriceFeedClob(PriceFeed):
         self.clob_api = clob_api
 
     def get_price(self, token: Token) -> float:
+        self.logger.info(f"Fetching price for condition_id: {self.market.condition_id}")
         token_id = self.market.token_id(token)
+        print(f"token_id: {token_id}")
 
         self.logger.debug("Fetching target price using the clob midpoint price...")
         target_price = self.clob_api.get_price(token_id)
         self.logger.debug(f"target_price: {target_price}")
+    
         return target_price

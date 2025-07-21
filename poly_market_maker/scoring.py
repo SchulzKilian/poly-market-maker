@@ -19,9 +19,15 @@ def get_token_score(token_id: int):
     
     # If essential data is missing, we can't score it.
     if not order_book or not order_book.get('bids') or not order_book.get('asks') or len(order_book['bids']) == 0 or len(order_book['asks']) == 0:
-        logger.warning(f"Could not score token {token_id} due to empty or invalid order book.")
-        logger.warning(f"The exact conditions were {order_book}")
-        return 0,0, float('inf')
+        logger.debug(f"Could not score token {token_id} due to empty or invalid order book.")
+        if not order_book:
+            explanation = 0
+        elif not order_book.get('bids'):
+            explanation = 1
+        elif not order_book.get('asks'):
+            explanation = 2
+        # logger.warning(f"The exact conditions were {order_book}")
+        return explanation,0, float('inf')
 
     # 2. Calculate Spread from Order Book
     best_bid = float(order_book['bids'][0]['price'])

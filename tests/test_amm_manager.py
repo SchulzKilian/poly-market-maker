@@ -1,8 +1,8 @@
 from unittest import TestCase
 
-from poly_market_maker.strategies.amm import AMMManager, AMMConfig
-from poly_market_maker.order import Side
-from poly_market_maker.token import Token, Collateral
+from strategies.amm import AMMManager, AMMConfig
+from order import Side
+from token_class import Token, Collateral
 
 
 class TestAMMManager(TestCase):
@@ -68,7 +68,7 @@ class TestAMMManager(TestCase):
         self.assertLessEqual(sum(sell_sizes_b), self.balances[Token.B])
 
         buy_sizes_a = [order.size for order in buy_orders_a]
-        print(buy_sizes_a)
+
         for i in range(len(buy_sizes_a) - 1):
             self.assertLess(buy_sizes_a[i], buy_sizes_a[i + 1])
 

@@ -3,6 +3,7 @@ import sys
 import copy
 import time
 from strategy import Strategy
+from prometheus_client import start_http_server
 import json
 import os
 import logging
@@ -43,12 +44,31 @@ def run_market_maker(config_obj, condition_id: str):
     """
     Runs the market maker for a single condition_id.
     This function is the target for the multiprocessing.Process.
-    It receives a ready-to-use configuration object.
+
+    FIX: This function now accepts a 'config_obj' which is the already-parsed
+    configuration. It does NOT call get_args() again. It passes the config
+    directly to the App.
     """
+    # A new process needs to have logging configured again.
+    setup_logging()
+    from prometheus_client import start_http_server
     logger = logging.getLogger(__name__)
+    logging.basicConfig(level=logging.INFO)
     logger.info(f"Starting market maker bot for condition_id: {condition_id}")
     try:
-        # The config object is passed directly to the App.
+        from prometheus_client import start_http_server
+        assert config_obj.metrics_server_port is not None, "Metrics server port must be set in the config object."
+        logger.info(f"Attempting to start metrics server on url http://localhost:{config_obj.metrics_server_port} for condition id {condition_id}...")
+        start_http_server(config_obj.metrics_server_port)
+        time.sleep(100)
+        logger.info(f"Metrics server started successfully for {condition_id}.")
+    except Exception as e:
+
+        print("Failed to start metrics server:", e)
+        logger.error(f"CRITICAL: Failed to start metrics server for {condition_id} on port {config_obj.metrics_server_port}", exc_info=True)
+
+    try:
+        # The config_obj is passed directly to the App. No re-parsing!
         app = App(config_obj, condition_id)
         app.main()
     except KeyboardInterrupt:

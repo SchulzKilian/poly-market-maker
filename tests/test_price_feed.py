@@ -1,9 +1,9 @@
 from unittest import TestCase
 
-from poly_market_maker.price_feed import PriceFeedClob
-from poly_market_maker.token import Token
-from poly_market_maker.market import Market
-from poly_market_maker.clob_api import ClobApi
+from price_feed import PriceFeedClob
+from token_class import Token
+from market import Market
+from clob_api import ClobApi
 
 
 class MockClobApi(ClobApi):

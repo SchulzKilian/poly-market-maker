@@ -1,9 +1,9 @@
 from unittest import TestCase
 
-from poly_market_maker.order import Side, Order
-from poly_market_maker.token import Token
+from order import Side, Order
+from token_class import Token
 
-from poly_market_maker.strategies.amm_strategy import OrderType
+from strategies.amm_strategy import OrderType
 
 
 class TestOrderType(TestCase):

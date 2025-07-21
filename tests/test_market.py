@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from poly_market_maker.market import Market, Token
+from market import Market, Token
 
 usdc_address = "0x2E8DCfE708D44ae2e406a1c02DFE2Fa13012f961"
 condition_id = "0xbd31dc8a20211944f6b70f31557f1001557b59905b7738480ca09bd4532f84af"

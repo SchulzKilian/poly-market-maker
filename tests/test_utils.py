@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from poly_market_maker.utils import randomize_default_price
+from utils import randomize_default_price
 
 
 class TestUtils(TestCase):

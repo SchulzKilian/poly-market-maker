@@ -2,10 +2,10 @@ from re import M
 from unittest import TestCase
 import uuid
 
-from poly_market_maker.market import Market
-from poly_market_maker.token import Token, Collateral
-from poly_market_maker.strategies.amm_strategy import AMMStrategy
-from poly_market_maker.order import Order, Side
+from market import Market
+from token_class import Token, Collateral
+from strategies.amm_strategy import AMMStrategy
+from order import Order, Side
 
 
 class OrderBook:

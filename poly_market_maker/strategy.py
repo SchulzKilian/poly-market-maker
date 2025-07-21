@@ -100,6 +100,7 @@ class StrategyManager:
 
         price = self.price_feed.get_price(Token.A)
         if price is None:
+            self.logger.warning("Price feed returned None. Cannot proceed with strategy.")
             return {
                 Token.A: -1,
                 Token.B: -1

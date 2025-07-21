@@ -23,6 +23,8 @@ class App:
     def __init__(self, config, condition_id: str = None):
         setup_logging()
         self.logger = logging.getLogger(__name__)
+        # self.logger.setLevel(logging.DEBUG)
+        self.logger.debug(f"Initializing the keeper for condsition_id: {condition_id}")
 
         self.sync_interval = 5
 
@@ -31,7 +33,6 @@ class App:
         args = config
         # server to expose the metrics.
         self.metrics_server_port = args.metrics_server_port
-        start_http_server(self.metrics_server_port)
 
         self.web3 = setup_web3(args.rpc_url, args.private_key)
         self.address = self.web3.eth.account.from_key(args.private_key).address

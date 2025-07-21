@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from poly_market_maker.market import Token
+from market import Token
 
 
 class TestToken(TestCase):

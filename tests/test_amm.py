@@ -1,7 +1,7 @@
 from unittest import TestCase
 
-from poly_market_maker.token import Token
-from poly_market_maker.strategies.amm import AMM, AMMConfig
+from token_class import Token
+from strategies.amm import AMM, AMMConfig
 
 
 class TestAMM(TestCase):

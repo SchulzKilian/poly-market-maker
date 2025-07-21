@@ -1,7 +1,7 @@
 from unittest import TestCase
 from web3 import Web3
 
-from poly_market_maker.ct_helpers import CTHelpers
+from ct_helpers import CTHelpers
 
 
 class TestCTHelpers(TestCase):

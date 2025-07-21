@@ -1,7 +1,7 @@
 from unittest import TestCase
 from py_clob_client.order_builder.constants import BUY, SELL
 
-from poly_market_maker.order import Side
+from order import Side
 
 
 class TestSide(TestCase):

@@ -66,7 +66,7 @@ class ClobApi:
 
                 price = resp.get("price")
             else:
-                self.logger.debug("No side provided, fetching midpoint price.")
+                self.logger.debug(f"No side provided, fetching midpoint price for the token id {token_id}.")
                 resp = self.client.get_midpoint(token_id)
                 self.logger.debug(f"Midpoint response: {resp}")
                 self.logger.info(f"Midpoint response for {token_id=}: {resp}")
