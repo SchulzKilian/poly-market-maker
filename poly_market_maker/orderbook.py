@@ -125,6 +125,7 @@ class OrderBookManager:
 
     def get_order_book(self) -> OrderBook:
         self.logger.setLevel(logging.DEBUG)
+        self.logger.debug("Getting order book...")
         """
         Returns the current snapshot of the active keeper orders and balances.
         """

@@ -13,8 +13,8 @@ class Market:
 
         self.condition_id = condition_id
         self.token_ids = {
-            Token.A: CTHelpers.get_token_id(condition_id, collateral_address, 0),
-            Token.B: CTHelpers.get_token_id(condition_id, collateral_address, 1),
+            Token.A: CTHelpers.get_token_id(condition_id),
+            Token.B: CTHelpers.get_token_id(condition_id)
         }
 
         self.logger.debug(f"Initialized Market: {self}")

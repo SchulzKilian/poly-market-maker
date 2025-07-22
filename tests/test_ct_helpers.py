@@ -34,10 +34,10 @@ class TestCTHelpers(TestCase):
         self.assertEqual(odd, False)
 
         self.assertEqual(
-            CTHelpers.get_token_id(condition_id, collateral_address, 0), token_id_0
+            CTHelpers.get_token_id(condition_id), token_id_0
         )
         self.assertEqual(
-            CTHelpers.get_token_id(condition_id, collateral_address, 1), token_id_1
+            CTHelpers.get_token_id(condition_id), token_id_1
         )
 
     """
@@ -67,8 +67,8 @@ class TestCTHelpers(TestCase):
         self.assertEqual(odd, True)
 
         self.assertEqual(
-            CTHelpers.get_token_id(condition_id, collateral_address, 0), token_id_0
+            CTHelpers.get_token_id(condition_id), token_id_0
         )
         self.assertEqual(
-            CTHelpers.get_token_id(condition_id, collateral_address, 1), token_id_1
+            CTHelpers.get_token_id(condition_id), token_id_1
         )

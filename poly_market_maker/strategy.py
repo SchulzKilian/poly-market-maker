@@ -83,6 +83,7 @@ class StrategyManager:
     def get_order_book(self):
         self.logger.setLevel(logging.DEBUG)
         orderbook = self.order_book_manager.get_order_book()
+        print(f" The orderbook is {orderbook} ")
         self.logger.debug(f"Orderbook: {orderbook.balances}")
         self.logger.debug(f"Orderbook: {orderbook.orders}")
 
