@@ -12,6 +12,8 @@ from enum import Enum
 from app import App
 from dotenv import load_dotenv
 from utils import setup_logging
+from clob_api import ClobApi
+from market import Market, Token
 
 # 1. Load environment variables from a .env file into the OS environment.
 # This should be done at the very top of the script.
@@ -90,6 +92,15 @@ if __name__ == "__main__":
     # Convert the final dictionary into a SimpleNamespace object for dot notation access (e.g., config.private_key)
     base_config = types.SimpleNamespace(**config_dict)
 
+    # Create a single ClobApi instance for pre-flight checks
+    try:
+        clob_api_for_checks = ClobApi(host=base_config.clob_api_url, chain_id=137, private_key=base_config.private_key)
+        collateral_address = clob_api_for_checks.get_collateral_address()
+    except Exception as e:
+        logger.error(f"Failed to initialize ClobApi for pre-flight checks. Cannot start bots. Error: {e}")
+        sys.exit(1)
+
+
     running_bots = {}  # {condition_id: Process}
 
     try:
@@ -129,6 +140,24 @@ if __name__ == "__main__":
             # --- Start new bots ---
             bots_to_start = target_set - running_set
             for cid in bots_to_start:
+                # --- PRE-FLIGHT CHECK ---
+                try:
+                    logger.info(f"Performing pre-flight check for market {cid}...")
+                    market = Market(cid, collateral_address)
+                    token_a_id = market.token_id(Token.A)
+                    price = clob_api_for_checks.get_price(token_a_id)
+
+                    if price is None or price <= 0.001 or price >= 0.999:
+                        logger.warning(f"SKIPPING bot for market {cid} due to illiquidity or invalid price ({price}).")
+                        continue # Skip starting this bot
+                    
+                    logger.info(f"Pre-flight check PASSED for market {cid} with price {price}.")
+
+                except Exception as e:
+                    logger.error(f"Pre-flight check FAILED for market {cid}. Skipping bot. Error: {e}")
+                    continue
+                # --- END PRE-FLIGHT CHECK ---
+
                 # Create a deep copy of the config for the new process
                 process_config = copy.deepcopy(base_config)
 

@@ -12,9 +12,11 @@ class Market:
         assert isinstance(collateral_address, str)
 
         self.condition_id = condition_id
+        token_ids_list = CTHelpers.get_token_ids(condition_id)
+
         self.token_ids = {
-            Token.A: CTHelpers.get_token_id(condition_id),
-            Token.B: CTHelpers.get_token_id(condition_id)
+            Token.A: token_ids_list[0] if token_ids_list else None,
+            Token.B: token_ids_list[1] if token_ids_list and len(token_ids_list) > 1 else None
         }
 
         self.logger.debug(f"Initialized Market: {self}")
@@ -23,9 +25,12 @@ class Market:
         return f"Market[condition_id={self.condition_id}, token_id_a={self.token_ids[Token.A]}, token_id_b={self.token_ids[Token.B]}]"
 
     def token_id(self, token: Token) -> int:
-        return self.token_ids[token]
+        token_id = self.token_ids.get(token)
+        return int(token_id) if token_id is not None else None
 
     def token(self, token_id: int) -> Token:
+        if token_id is None:
+            return None
         for token in Token:
             if token_id == self.token_ids[token]:
                 return token

@@ -34,12 +34,13 @@ class AMMConfig:
 class AMM:
     def __init__(self, token: Token, config: AMMConfig):
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.setLevel(logging.DEBUG)
 
         assert isinstance(token, Token)
 
         if config.spread >= config.depth:
             raise Exception("Depth does not exceed spread.")
-
+        self.logger.debug(f"Initializing AMM for {token.name} with config: {config}")
         self.token = token
         self.p_min = config.p_min
         self.p_max = config.p_max
@@ -49,6 +50,14 @@ class AMM:
         self.max_collateral = config.max_collateral
 
     def set_price(self, p_i: float):
+        # Validate the input price. Prices of 0 or 1 are invalid for the AMM math.
+        if p_i is None or p_i <= 0.001 or p_i >= 0.999:
+            self.logger.warning(f"Invalid target price '{p_i}' for token {self.token}. Skipping price update. No orders will be generated for this token.")
+            self.p_i = None # Mark price as invalid
+            self.buy_prices = []
+            self.sell_prices = []
+            return
+
         self.p_i = p_i
         self.p_u = round(min(p_i + self.depth, self.p_max), 2)
         self.p_l = round(max(p_i - self.depth, self.p_min), 2)
@@ -113,6 +122,8 @@ class AMM:
 
     @staticmethod
     def _sell_size(x, p_i, p_t, p_u):
+        if p_i >= p_u:
+            return 0
         L = x / (1 / sqrt(p_i) - 1 / sqrt(p_u))
         a = L / sqrt(p_u) - L / sqrt(p_t) + x
         return a
@@ -122,6 +133,8 @@ class AMM:
 
     @staticmethod
     def _buy_size(y, p_i, p_t, p_l):
+        if p_i <= p_l:
+            return 0
         L = y / (sqrt(p_i) - sqrt(p_l))
         a = L * (1 / sqrt(p_t) - 1 / sqrt(p_i))
         return a
@@ -143,11 +156,16 @@ class AMMManager:
         target_prices,
         balances,
     ):
-        self.amm_a.set_price(target_prices[Token.A])
-        self.amm_b.set_price(target_prices[Token.B])
+        self.amm_a.set_price(target_prices.get(Token.A))
+        self.amm_b.set_price(target_prices.get(Token.B))
 
-        sell_orders_a = self.amm_a.get_sell_orders(balances[Token.A])
-        sell_orders_b = self.amm_b.get_sell_orders(balances[Token.B])
+        sell_orders_a = []
+        if self.amm_a.p_i is not None:
+            sell_orders_a = self.amm_a.get_sell_orders(balances[Token.A])
+
+        sell_orders_b = []
+        if self.amm_b.p_i is not None:
+            sell_orders_b = self.amm_b.get_sell_orders(balances[Token.B])
 
         best_sell_order_size_a = sell_orders_a[0].size if len(sell_orders_a) > 0 else 0
         best_sell_order_size_b = sell_orders_b[0].size if len(sell_orders_b) > 0 else 0
@@ -160,8 +178,13 @@ class AMMManager:
             best_sell_order_size_b,
         )
 
-        buy_orders_a = self.amm_a.get_buy_orders(collateral_allocation_a)
-        buy_orders_b = self.amm_b.get_buy_orders(collateral_allocation_b)
+        buy_orders_a = []
+        if self.amm_a.p_i is not None:
+            buy_orders_a = self.amm_a.get_buy_orders(collateral_allocation_a)
+        
+        buy_orders_b = []
+        if self.amm_b.p_i is not None:
+            buy_orders_b = self.amm_b.get_buy_orders(collateral_allocation_b)
 
         orders = sell_orders_a + sell_orders_b + buy_orders_a + buy_orders_b
 

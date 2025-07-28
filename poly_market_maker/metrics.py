@@ -41,3 +41,15 @@ profit_and_loss_gauge = Gauge(
     "Profit and loss",
     namespace="market_maker",
 )
+market_info_gauge = Gauge(
+    "market_info",
+    "Extra market info",
+    labelnames=["market", "condition_id", "question_id"],
+    namespace="market_maker",
+)
+position_gauge = Gauge(
+    "position",
+    "Current position of the bot",
+    labelnames=["market", "token"],
+    namespace="market_maker",
+)

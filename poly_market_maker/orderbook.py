@@ -324,6 +324,7 @@ class OrderBookManager:
             return balances
         except Exception as e:
             self.logger.error(f"Exception fetching onchain balances! Error: {e}")
+            self.logger.exception(e)
             return None
 
     def _thread_refresh_order_book(self):

@@ -57,7 +57,7 @@ def get_polymarket_sports_markets():
             continue
 
 
-            
+    print(len(formatted_markets), "markets fetched")
     return formatted_markets
 
 def is_end_date_valid(end_date_iso: str | None) -> bool:
@@ -85,8 +85,17 @@ def is_end_date_valid(end_date_iso: str | None) -> bool:
 
 if __name__ == "__main__":
     markets = get_polymarket_sports_markets()
+    
+    counter = 0
     for keys in markets.keys():
         market = markets[keys]
         # logger.info(market)
+        
         assert market["active"] and not market["closed"], "Market is not active or closed"
+        print(market["question"])
+        try:
+            print(market["volume1wk"])
+        except KeyError:
+            counter += 1
+    print(f"Total markets without volume1wk: {counter}")
     logger.info(f"Total markets fetched: {len(markets)}")

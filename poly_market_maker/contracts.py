@@ -173,6 +173,9 @@ class Contracts:
             bal = self.balance_of_erc20(token, address)
         else:
             bal = self.balance_of_erc1155(token, address, token_id)
+        
+        if hasattr(bal, "balance"):
+            return float(bal.balance / DECIMALS)
         return float(bal / DECIMALS)
 
     def gas_balance(self, address):

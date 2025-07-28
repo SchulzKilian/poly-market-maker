@@ -255,6 +255,35 @@ class ClobApi:
                 (time.time() - start_time)
             )
         return False
+
+    def get_market_info(self, condition_id: str):
+        """
+        Get market info for a given condition ID.
+        """
+        if not condition_id:
+            return None
+
+        gamma_url = "https://gamma-api.polymarket.com/markets"
+        parameters = {
+            "condition_ids": [condition_id],
+        }
+
+        try:
+            response = requests.get(gamma_url, params=parameters)
+
+            if response.status_code != 200:
+                self.logger.error(f"Error fetching market info from Gamma API {response.status_code} with {response.text}")
+                return None
+            
+            data = response.json()
+            if data and len(data) > 0:
+                return data[0]
+            else:
+                return None
+
+        except Exception as e:
+            self.logger.error(f"Exception fetching market info from Gamma API: {e}")
+            return None
     
     def get_volume_and_liquidity(self, condition_ids: list[str]):
         self.logger.setLevel(logging.DEBUG)

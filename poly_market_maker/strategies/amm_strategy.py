@@ -1,3 +1,4 @@
+import logging
 from orderbook import OrderBook
 from constants import MIN_SIZE
 from order import Order
@@ -36,7 +37,13 @@ class AMMStrategy(BaseStrategy):
         assert isinstance(config_dict, dict)
 
         super().__init__()
-        self.amm_manager = AMMManager(self._get_config(config_dict))
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.info(f"Initializing AMMStrategy with config: {config_dict}")
+        
+        config = self._get_config(config_dict)
+        self.logger.info(f"Parsed AMMConfig: p_min={config.p_min}, p_max={config.p_max}, spread={config.spread}, delta={config.delta}, depth={config.depth}, max_collateral={config.max_collateral}")
+
+        self.amm_manager = AMMManager(config)
 
     @staticmethod
     def _get_config(config: dict):
@@ -50,6 +57,7 @@ class AMMStrategy(BaseStrategy):
         )
 
     def get_orders(self, orderbook: OrderBook, target_prices):
+        self.logger.info(f"AMMStrategy received target prices: {target_prices}")
         orders_to_cancel = []
         orders_to_place = []
 

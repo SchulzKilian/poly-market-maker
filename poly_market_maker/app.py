@@ -13,7 +13,7 @@ from clob_api import ClobApi
 from lifecycle import Lifecycle
 from orderbook import OrderBookManager
 from contracts import Contracts
-from metrics import keeper_balance_amount, orders_placed_counter, profit_and_loss_gauge
+from metrics import keeper_balance_amount, orders_placed_counter, profit_and_loss_gauge, market_info_gauge, position_gauge
 from strategy import StrategyManager
 import types
 
@@ -55,6 +55,16 @@ class App:
             condition_id,
             self.clob_api.get_collateral_address(),
         )
+
+        self.market_slug = None
+        market_info = self.clob_api.get_market_info(condition_id)
+        if market_info:
+            self.market_slug = market_info.get("slug")
+            market_info_gauge.labels(
+                market=self.market_slug,
+                condition_id=condition_id,
+                question_id=market_info.get("question")
+            ).set(1)
 
         self.price_feed = PriceFeedClob(self.market, self.clob_api)
 
@@ -124,6 +134,8 @@ class App:
     """
 
     def get_balances(self) -> dict:
+        self.logger.setLevel(logging.INFO)
+        self.logger.debug("Called get_balances")
         """
         Fetch the onchain balances of collateral and conditional tokens for the keeper
         """
@@ -132,18 +144,33 @@ class App:
         collateral_balance = self.contracts.token_balance_of(
             self.clob_api.get_collateral_address(), self.address
         )
-        token_A_balance = self.contracts.token_balance_of(
-            self.clob_api.get_conditional_address(),
-            self.address,
-            self.market.token_id(Token.A),
-        )
-        token_B_balance = self.contracts.token_balance_of(
-            self.clob_api.get_conditional_address(),
-            self.address,
-            self.market.token_id(Token.B),
-        )
-        gas_balance = self.contracts.gas_balance(self.address)
+        self.logger.debug(f"Collateral balance: {collateral_balance}")
 
+        token_A_balance = 0
+        token_A_id = self.market.token_id(Token.A)
+        if token_A_id:
+            token_A_balance = self.contracts.token_balance_of(
+                self.clob_api.get_conditional_address(),
+                self.address,
+                token_A_id,
+            )
+        else:
+            self.logger.warning(f"Token A not found for condition id {self.market.condition_id}")
+
+        self.logger.debug(f"token a balance is {token_A_balance}")
+        token_B_balance = 0
+        token_B_id = self.market.token_id(Token.B)
+        if token_B_id:
+            token_B_balance = self.contracts.token_balance_of(
+                self.clob_api.get_conditional_address(),
+                self.address,
+                token_B_id,
+            )
+        else:
+            self.logger.warning(f"Token B not found for condition id {self.market.condition_id}")
+        self.logger.debug(f"token b balance is {token_B_balance}")
+        gas_balance = self.contracts.gas_balance(self.address)
+        self.logger.debug(f"I made it to the gas_balance part: {gas_balance}")
         keeper_balance_amount.labels(
             accountaddress=self.address,
             assetaddress=self.clob_api.get_collateral_address(),
@@ -164,16 +191,15 @@ class App:
             assetaddress="0x0",
             tokenid="-1",
         ).set(gas_balance)
-
+        self.logger.debug(f"Collateral balance here: {collateral_balance}")
         current_balance = {
             Collateral: collateral_balance,
             Token.A: token_A_balance,
             Token.B: token_B_balance,
         }
-
         if self.starting_balance is None:
             self.starting_balance = current_balance
-
+        self.logger.info(f"Current wallet balance: {collateral_balance}")
         if self.last_balance:
             for token, balance in current_balance.items():
                 if token in self.last_balance:
@@ -182,6 +208,13 @@ class App:
                         self.logger.info(f"Balance change for {token}: {balance_change:+.2f}. New balance: {balance:.2f}")
 
         self.last_balance = current_balance
+
+        if self.market_slug:
+            for token, balance in current_balance.items():
+                position_gauge.labels(
+                    market=self.market_slug,
+                    token=token.name if hasattr(token, 'name') else 'Collateral'
+                ).set(balance)
 
         # Calculate PnL
         try:
@@ -201,16 +234,20 @@ class App:
 
     def get_orders(self) -> list[Order]:
         orders = self.clob_api.get_orders(self.market.condition_id)
-        return [
-            Order(
-                size=order_dict["size"],
-                price=order_dict["price"],
-                side=Side(order_dict["side"]),
-                token=self.market.token(order_dict["token_id"]),
-                id=order_dict["id"],
-            )
-            for order_dict in orders
-        ]
+        valid_orders = []
+        for order_dict in orders:
+            token = self.market.token(order_dict["token_id"])
+            if token:
+                valid_orders.append(
+                    Order(
+                        size=order_dict["size"],
+                        price=order_dict["price"],
+                        side=Side(order_dict["side"]),
+                        token=token,
+                        id=order_dict["id"],
+                    )
+                )
+        return valid_orders
 
     def place_order(self, new_order: Order) -> Order:
         self.logger.info(f"Placing order: {new_order.side.value} {new_order.size} of {new_order.token} at {new_order.price}")

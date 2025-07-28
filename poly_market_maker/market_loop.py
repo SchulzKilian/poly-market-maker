@@ -202,7 +202,7 @@ def main_loop():
             # Create a dictionary to store condition id as key and token ids as values
             grouped_token_ids = {}
 
-            for token in top_tokens:
+            for token in sorted_tokens:
                 condition_id = token['condition_id']
                 token_id = token['token_id']
                 
