@@ -14,10 +14,11 @@ def get_polymarket_sports_markets():
 
 
     # url = f"https://clob.polymarket.com/markets?next_cursor={next_cursor}" 
-    url = f"https://gamma-api.polymarket.com/markets?limit=40&active=true&closed=false&order=liquidity"
+    url = f"https://gamma-api.polymarket.com/markets?&limit=50&active=true&closed=false&order=volume"
 
     response = requests.get(url)
     data = response.json()
+    print(data)
 
     response.raise_for_status()
 
@@ -34,17 +35,6 @@ def get_polymarket_sports_markets():
         if type(market)!= str:
             if market.get('active') and not market.get('closed') and market.get('enableOrderBook') and is_end_date_valid(market.get('end_date')):
                 condition_id = market.get('id') 
-                formatted_market = {
-                    'question': market.get('question'),
-                    'description': market.get('description'),
-                    'end_date': market.get('end_date_iso'),
-                    'market_slug': market.get('market_slug'),
-                    'price': tuple(
-                        token.get('price') 
-                        for token in market.get('tokens', [])
-                    )
-                }
-                
                 formatted_markets[condition_id] = market
                 if condition_id == '':
                     import sys
@@ -94,8 +84,8 @@ if __name__ == "__main__":
         assert market["active"] and not market["closed"], "Market is not active or closed"
         print(market["question"])
         try:
-            print(market["volume1wk"])
+            print(market["volume"])
         except KeyError:
             counter += 1
-    print(f"Total markets without volume1wk: {counter}")
+    print(f"Total markets without liquidity: {counter}")
     logger.info(f"Total markets fetched: {len(markets)}")
