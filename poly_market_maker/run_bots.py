@@ -26,7 +26,7 @@ DEFAULT_CONFIG = {
     "rpc_url": None,
     "clob_api_url": None,
     "sync_interval": 30,
-    "min_size": 15.0,
+    "min_size": 5,
     "min_tick": 0.01,
     "refresh_frequency": 5,
     "gas_strategy": "web3",
