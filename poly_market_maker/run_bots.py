@@ -62,7 +62,7 @@ def run_market_maker(config_obj, condition_id: str):
         assert config_obj.metrics_server_port is not None, "Metrics server port must be set in the config object."
         logger.info(f"Attempting to start metrics server on url http://localhost:{config_obj.metrics_server_port} for condition id {condition_id}...")
         start_http_server(config_obj.metrics_server_port)
-        time.sleep(100)
+        time.sleep(5)
         logger.info(f"Metrics server started successfully for {condition_id}.")
     except Exception as e:
 
