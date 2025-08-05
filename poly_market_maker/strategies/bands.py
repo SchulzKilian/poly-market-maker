@@ -1,9 +1,13 @@
 import itertools
 import logging
 
-from token_class import Token
-from constants import MIN_TICK, MIN_SIZE, MAX_DECIMALS
+from orderbook import OrderBook
 from order import Order, Side
+from token_class import Token, Collateral
+from constants import MAX_DECIMALS
+
+from strategies.base_strategy import BaseStrategy
+
 
 
 class Band:

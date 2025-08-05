@@ -185,6 +185,7 @@ class ClobApi:
         )
         start_time = time.time()
         try:
+            self.logger.debug(f"Sending order to CLOB: price={price}, size={size}, side={side}, token_id={token_id}")
             resp = self.client.create_and_post_order(
                 OrderArgs(price=price, size=size, side=side, token_id=token_id)
             )
@@ -201,14 +202,18 @@ class ClobApi:
 
             err_msg = resp.get("errorMsg")
             self.logger.error(
-                f"Could not place new order! CLOB returned error: {err_msg}"
+                f"Could not place new order! CLOB returned error: {err_msg}. Full response: {resp}. Parameters: price={price}, size={size}, side={side}, token_id={token_id}"
             )
+            raise PolyApiException(err_msg)
         except Exception as e:
-            self.logger.error(f"Request exception: failed placing new order: {e}")
+            if isinstance(e, PolyApiException):
+                self.logger.error(f"Request exception: failed placing new order with parameters price={price}, size={size}, side={side}, token_id={token_id}: PolyApiException[status_code={e.status_code}, error_message={e.error_msg}]", exc_info=True)
+            else:
+                self.logger.error(f"Request exception: failed placing new order with parameters price={price}, size={size}, side={side}, token_id={token_id}: {e}", exc_info=True)
             clob_requests_latency.labels(
                 method="create_and_post_order", status="error"
             ).observe((time.time() - start_time))
-        return None
+            raise e
 
     def cancel_order(self, order_id) -> bool:
         self.logger.debug(f"Attempting to cancel order {order_id}...")

@@ -1,0 +1,39 @@
+[
+    {
+        "question": "No change in Fed interest rates after December 2025 meeting?",
+        "market_slug": "",
+        "volume": 1010.082653,
+        "price": 0.5,
+        "token_id": "80746058984644290629624903019922696017323803605256698757445938534814122585786",
+        "condition_id": "570362",
+        "score": 64.43767332392551
+    },
+    {
+        "question": "No change in Fed interest rates after December 2025 meeting?",
+        "market_slug": "",
+        "volume": 1010.082653,
+        "price": 0.5,
+        "token_id": "85970682092909806158465981896969493051954703765750954325716965011253694472992",
+        "condition_id": "570362",
+        "score": 63.37171602004196
+    },
+    {
+        "question": "Will Mike Waltz receive 54 YEA votes in his UN Ambassador confirmation vote?",
+        "market_slug": "",
+        "volume": 1003.282049,
+        "price": 0.5,
+        "token_id": "112872486962178115528104835293878551021778085811481439216693124847296187147461",
+        "condition_id": "564439",
+        "score": 45.4584537253715
+    },
+    {
+        "question": "Will Mike Waltz receive 54 YEA votes in his UN Ambassador confirmation vote?",
+        "market_slug": "",
+        "volume": 1003.282049,
+        "price": 0.5,
+        "token_id": "15317526212872123573111732560751137698860754599162964244719112408112725460643",
+        "condition_id": "564439",
+        "score": 37.57267174721661
+    }
+
+]

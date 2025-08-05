@@ -13,7 +13,7 @@ from scoring import get_token_score
 from clob_api import ClobApi
 import traceback
 from metrics import active_markets_gauge
-from constants import MARKET_FILE, TOKEN_ID_FILE
+from constants import MARKET_FILE, TOKEN_ID_FILE, DETAILED_MARKET_FILE
 # --- Configuration ---
 
 # How often to perform actions (in seconds)
@@ -96,6 +96,7 @@ def main_loop():
             if all_tokens:
                 # 1. Get raw scores for all tokens
                 raw_scores = []
+                unscorable_tokens = []
 
                 amount_empty_book = 0
                 amount_no_bids = 0
@@ -103,16 +104,9 @@ def main_loop():
                 for ind, token in enumerate(all_tokens):
                     token_id = token.get('token_id')
                     if token_id:
-                        spread_score, depth_score, volatility_score = get_token_score(token_id)
-                        if volatility_score == float('inf'):
-                            if spread_score == 0:
-                                amount_empty_book += 1
-                            elif spread_score ==1:
-                                amount_no_bids += 1
-                            elif spread_score == 2:
-                                amount_no_asks += 1
-                            continue
-                        raw_scores.append({
+                        spread_score, depth_score, volatility_score, price = get_token_score(token_id)
+                        
+                        token_data = {
                             'token': token,
                             'token_id': token_id,
                             'condition_id': token['condition_id'],
@@ -120,10 +114,31 @@ def main_loop():
                             'depth': depth_score,
                             'volume': float(token['market'].get('volume', 0)),
                             'liquidity': float(token['market'].get('liquidity', 0)),
-                            'volatility': float(volatility_score),
+                            'volatility': volatility_score,
                             'market_slug': token['market'].get('market_slug', ''),
+                            'price': price,
+                        }
 
-                        })
+                        # Check for unscorable conditions (empty book, invalid price, etc.)
+                        is_unscorable = False
+                        if volatility_score == float('inf'):
+                            if spread_score == 0:
+                                amount_empty_book += 1
+                            elif spread_score == 1:
+                                amount_no_bids += 1
+                            elif spread_score == 2:
+                                amount_no_asks += 1
+                            is_unscorable = True
+                        
+                        if price <= 0.1 or price >= 0.9:
+                            logger.warning(f"Token {token_id} has a price of {price:.2f}, which is too close to the boundaries. Marking as unscorable.")
+                            is_unscorable = True
+
+                        if is_unscorable:
+                            token_data['score'] = 0.0
+                            unscorable_tokens.append(token_data)
+                        else:
+                            raw_scores.append(token_data)
 
                 logger.info(f"{amount_empty_book} tokens had an empty order book, {amount_no_bids} tokens had no bids, and {amount_no_asks} tokens had no asks.")
 
@@ -188,7 +203,8 @@ def main_loop():
                 logger.warning("⚠️ No markets found to score. Skipping scoring step.")
                 continue
             # Sort and get the top N tokens
-            sorted_tokens = sorted(raw_scores, key=lambda t: t.get('score', 0), reverse=True)
+            all_scored_tokens = raw_scores + unscorable_tokens
+            sorted_tokens = sorted(all_scored_tokens, key=lambda t: t.get('score', 0), reverse=True)
             top_tokens = sorted_tokens[:TOP_N_MARKETS]
             # Code that prints the top markets by summing their scores from the sorted tokens
             
@@ -223,6 +239,25 @@ def main_loop():
             with open(temp_token_id_file_path, 'w') as f:
                 json.dump(grouped_token_ids, f)
             os.rename(temp_token_id_file_path, TOKEN_ID_FILE)
+
+            # Create and write the detailed market information to a file
+            top_markets_detailed = []
+            for token in top_tokens:
+                market_details = {
+                    'question': token['token']['market'].get('question'),
+                    'market_slug': token.get('market_slug'),
+                    'volume': token.get('volume'),
+                    'price': token.get('price'),
+                    'token_id': token.get('token_id'),
+                    'condition_id': token.get('condition_id'),
+                    'score': token.get('score')
+                }
+                top_markets_detailed.append(market_details)
+
+            temp_detailed_file_path = f"{DETAILED_MARKET_FILE}.tmp"
+            with open(temp_detailed_file_path, 'w') as f:
+                json.dump(top_markets_detailed, f, indent=4)
+            os.rename(temp_detailed_file_path, DETAILED_MARKET_FILE)
             
             logger.info(f"\n✅ Wrote {len(top_condition_ids)} market(s) to {MARKET_FILE}")
             last_scoring_update = current_time

@@ -33,7 +33,12 @@ def get_polymarket_sports_markets():
 
     for market in data:
         if type(market)!= str:
-            if market.get('active') and not market.get('closed') and market.get('enableOrderBook') and is_end_date_valid(market.get('end_date')):
+            if market.get('active') and not market.get('closed') and market.get('enableOrderBook') and is_end_date_valid(market.get('end_date')) and market.get('outcomePrices'):
+
+                if float(eval(market.get('outcomePrices'))[0]) < 0.1 or float(eval(market.get('outcomePrices'))[1]) > 0.9:
+                    continue
+
+
                 condition_id = market.get('id') 
                 formatted_markets[condition_id] = market
                 if condition_id == '':
@@ -75,17 +80,18 @@ def is_end_date_valid(end_date_iso: str | None) -> bool:
 
 if __name__ == "__main__":
     markets = get_polymarket_sports_markets()
-    
+
     counter = 0
     for keys in markets.keys():
         market = markets[keys]
+
         # logger.info(market)
         
         assert market["active"] and not market["closed"], "Market is not active or closed"
         print(market["question"])
         try:
-            print(market["volume"])
+            print(market["outcomePrices"])
         except KeyError:
             counter += 1
-    print(f"Total markets without liquidity: {counter}")
+    print(f"Total markets without prices: {counter}")
     logger.info(f"Total markets fetched: {len(markets)}")

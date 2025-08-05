@@ -147,8 +147,8 @@ if __name__ == "__main__":
                     token_a_id = market.token_id(Token.A)
                     price = clob_api_for_checks.get_price(token_a_id)
 
-                    if price is None or price <= 0.001 or price >= 0.999:
-                        logger.warning(f"SKIPPING bot for market {cid} due to illiquidity or invalid price ({price}).")
+                    if price is None or price <= 0.1 or price >= 0.9:
+                        logger.warning(f"SKIPPING bot for market {cid} due to price ({price}) being outside the 0.1-0.9 range.")
                         continue # Skip starting this bot
                     
                     logger.info(f"Pre-flight check PASSED for market {cid} with price {price}.")

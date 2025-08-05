@@ -27,12 +27,13 @@ def get_token_score(token_id: int):
         elif not order_book.get('asks'):
             explanation = 2
         # logger.warning(f"The exact conditions were {order_book}")
-        return explanation,0, float('inf')
+        return explanation,0, float('inf'), 0
 
     # 2. Calculate Spread from Order Book
     best_bid = float(order_book['bids'][0]['price'])
     best_ask = float(order_book['asks'][0]['price'])
     spread_score = best_ask - best_bid
+    price = (best_bid + best_ask) / 2
 
 
     # 3. Calculate Depth from Order Book
@@ -56,7 +57,7 @@ def get_token_score(token_id: int):
 
     logger.debug(f"Scored token {token_id}:  (Spread={spread_score:.2f}, Depth={depth_score:.2f},  Volatility={volatility_score:.2f})")
 
-    return  spread_score, depth_score, volatility_score
+    return  spread_score, depth_score, volatility_score, price
 
 
 if __name__ == "__main__":

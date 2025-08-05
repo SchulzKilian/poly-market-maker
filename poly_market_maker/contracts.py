@@ -73,7 +73,7 @@ class Contracts:
             chain_requests_counter.labels(method="allowance", status="error").inc()
             raise e
 
-        return allowance > 0
+        return allowance
 
     def is_approved_erc1155(self, token: str, owner: str, spender: str):
         erc1155 = self.w3.eth.contract(token, abi=erc1155_is_approved_for_all)
@@ -91,82 +91,121 @@ class Contracts:
         return approved
 
     def max_approve_erc20(self, token: str, owner: str, spender: str):
-
         # self.logger.setLevel(level=logging.DEBUG)
         self.logger.debug(f"Checking approval for {token} on {spender}...")
-        # Check if already approved
-        if not self.is_approved_erc20(token, owner, spender):
-            erc20 = self.w3.eth.contract(token, abi=erc20_approve)
-            self.logger.debug(
-                f"Max approving ERC20 token {token} on spender {spender}..."
-            )
+        erc20_allowance_contract = self.w3.eth.contract(token, abi=erc20_allowance)
+        try:
+            current_allowance = erc20_allowance_contract.functions.allowance(owner, spender).call()
+            chain_requests_counter.labels(method="allowance", status="ok").inc()
+        except Exception as e:
+            self.logger.error(f"Error checking allowance: {e}")
+            chain_requests_counter.labels(method="allowance", status="error").inc()
+            raise e
 
-            try:
-                txn_hash_bytes = erc20.functions.approve(
-                    spender, int(web3.constants.MAX_INT, base=16)
-                ).transact({"gasPrice": self.gas_station.get_gas_price()})
-                chain_requests_counter.labels(method="approve", status="ok").inc()
-            except Exception as e:
-                self.logger.error(f"Error approve: {e}")
-                chain_requests_counter.labels(method="approve", status="error").inc()
-                raise e
-
-            txn_hash_hex = self.w3.to_hex(txn_hash_bytes)
-            self.logger.debug(f"ERC20 approve transaction hash: {txn_hash_hex}")
-            # self.logger.setLevel(level=logging.INFO)
-            return txn_hash_hex
-        else:
-            self.logger.debug(f"ERC20 token {token} is already approved for {spender}")
-            # self.logger.setLevel(level=logging.INFO)
+        if current_allowance == int(web3.constants.MAX_INT, base=16):
+            self.logger.info(f"ERC20 token {token} is already max approved for {spender}.")
             return None
+
+        erc20_approve_contract = self.w3.eth.contract(token, abi=erc20_approve)
+        self.logger.debug(
+            f"Max approving ERC20 token {token} on spender {spender}..."
+        )
+
+        try:
+            txn_hash_bytes = erc20_approve_contract.functions.approve(
+                spender, int(web3.constants.MAX_INT, base=16)
+            ).transact({"gasPrice": self.gas_station.get_gas_price()})
+            chain_requests_counter.labels(method="approve", status="ok").inc()
+            
+            txn_hash_hex = self.w3.to_hex(txn_hash_bytes)
+            self.logger.info(f"ERC20 approval transaction sent with hash: {txn_hash_hex}")
+            receipt = self.w3.eth.wait_for_transaction_receipt(txn_hash_bytes)
+            self.logger.info(f"ERC20 approval transaction receipt: {receipt}")
+            if receipt.status != 1:
+                self.logger.error(f"ERC20 approval for {token} FAILED. Receipt: {receipt}")
+
+        except Exception as e:
+            self.logger.error(f"Error approve: {e}")
+            chain_requests_counter.labels(method="approve", status="error").inc()
+            raise e
+
+        txn_hash_hex = self.w3.to_hex(txn_hash_bytes)
+        self.logger.debug(f"ERC20 approve transaction hash: {txn_hash_hex}")
+        # self.logger.setLevel(level=logging.INFO)
+        return txn_hash_hex
+        # else:
+        #     self.logger.debug(f"ERC20 token {token} is already approved for {spender}")
+        #     # self.logger.setLevel(level=logging.INFO)
+        #     return None
     def max_approve_erc1155(self, token: str, owner: str, spender: str):
         # self.logger.setLevel(level=logging.DEBUG)
-        if not self.is_approved_erc1155(token, owner, spender):
+        self.logger.debug(f"Checking approval for {token} on {spender}...")
+        erc1155_is_approved_contract = self.w3.eth.contract(token, abi=erc1155_is_approved_for_all)
+        try:
+            approved = erc1155_is_approved_contract.functions.isApprovedForAll(owner, spender).call()
+            chain_requests_counter.labels(method="isApprovedForAll", status="ok").inc()
+        except Exception as e:
+            self.logger.error(f"Error checking isApprovedForAll: {e}")
+            chain_requests_counter.labels(method="isApprovedForAll", status="error").inc()
+            raise e
+
+        if approved:
+            self.logger.info(f"ERC1155 token {token} is already approved for all for {spender}.")
+            return None
+
+        self.logger.debug(
+            f"Max approving ERC1155 token {token} on spender {spender}..."
+        )
+        erc1155_set_approval_contract = self.w3.eth.contract(token, abi=erc1155_set_approval)
+        self.logger.debug(f"Checking approval for {token} on {spender}...")
+        gas_price = self.gas_station.get_gas_price() # Get the gas price
+        self.logger.debug(f"Submitting transaction with gas price: {gas_price}")
+        try:
+
+            approval_func = erc1155_set_approval_contract.functions.setApprovalForAll(spender, True)
             self.logger.debug(
-                f"Max approving ERC1155 token {token} on spender {spender}..."
+                f"Finished the approval function on token {token} for spender {spender}..."
             )
-            erc1155 = self.w3.eth.contract(token, abi=erc1155_set_approval)
-            self.logger.debug(f"Checking approval for {token} on {spender}...")
-            gas_price = self.gas_station.get_gas_price() # Get the gas price
-            self.logger.debug(f"Submitting transaction with gas price: {gas_price}")
-            try:
 
-                approval_func = erc1155.functions.setApprovalForAll(spender, True)
-                self.logger.debug(
-                    f"Finished the approval function on token {token} for spender {spender}..."
-                )
+            gas_limit = approval_func.estimate_gas({'from': owner})
 
-                gas_limit = approval_func.estimate_gas({'from': owner})
+            self.logger.debug(
+                f"Finished the gas limit estimation..."
+            )
 
-                self.logger.debug(
-                    f"Finished the gas limit estimation..."
-                )
+            nonce = self.w3.eth.get_transaction_count(owner)
 
-                nonce = self.w3.eth.get_transaction_count(owner)
+            self.logger.debug(f"Nonce for {owner}: {nonce}")
 
-                self.logger.debug(f"Nonce for {owner}: {nonce}")
+            transaction = {
+                'from': owner,
+                'gasPrice': gas_price,
+                'gas': gas_limit,
+                'nonce': nonce,
+            }
 
-                transaction = {
-                    'from': owner,
-                    'gasPrice': gas_price,
-                    'gas': gas_limit,
-                    'nonce': nonce,
-                }
-
-                txn_hash_bytes = approval_func.transact(transaction)
-                self.logger.debug(
-                    f"Max approved ERC1155 token {token} for spender {spender}")
-            except Exception as e:
-                self.logger.error(f"Error setApprovalForAll: {e}")
-                chain_requests_counter.labels(
-                    method="setApprovalForAll", status="error"
-                ).inc()
-                raise e
+            txn_hash_bytes = approval_func.transact(transaction)
+            self.logger.debug(
+                f"Max approved ERC1155 token {token} for spender {spender}")
 
             txn_hash_hex = self.w3.to_hex(txn_hash_bytes)
-            self.logger.debug(f"ERC1155 approve transaction hash: {txn_hash_hex}")
-            # self.logger.setLevel(level=logging.INFO)
-            return txn_hash_hex
+            self.logger.info(f"ERC1155 approval transaction sent with hash: {txn_hash_hex}")
+            receipt = self.w3.eth.wait_for_transaction_receipt(txn_hash_bytes)
+            self.logger.info(f"ERC1155 approval transaction receipt: {receipt}")
+            if receipt.status != 1:
+                self.logger.error(f"ERC1155 approval for {token} FAILED. Receipt: {receipt}")
+
+        except Exception as e:
+            self.logger.error(f"Error setApprovalForAll: {e}")
+            chain_requests_counter.labels(
+                method="setApprovalForAll", status="error"
+            ).inc()
+            raise e
+
+        txn_hash_hex = self.w3.to_hex(txn_hash_bytes)
+        self.logger.debug(f"ERC1155 approve transaction hash: {txn_hash_hex}")
+        # self.logger.setLevel(level=logging.INFO)
+        return txn_hash_hex
 
     def token_balance_of(self, token: str, address: str, token_id=None):
         if token_id is None:

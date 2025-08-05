@@ -10,6 +10,7 @@ from web3.middleware import (
 )
 from web3.middleware.signing import SignAndSendRawMiddlewareBuilder # New import for signing middleware
 from web3.gas_strategies.time_based import fast_gas_price_strategy
+from constants import MAX_DECIMALS
 
 
 def setup_logging(
@@ -81,7 +82,7 @@ def math_round_up(f: float, sig_digits: int) -> float:
 
 
 def add_randomness(price: float, lower: float, upper: float) -> float:
-    return math_round_down(price + random.uniform(lower, upper), 2)
+    return math_round_down(price + random.uniform(lower, upper), MAX_DECIMALS)
 
 
 def randomize_default_price(price: float) -> float:

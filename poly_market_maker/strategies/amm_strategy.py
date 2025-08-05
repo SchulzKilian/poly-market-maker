@@ -1,6 +1,6 @@
 import logging
 from orderbook import OrderBook
-from constants import MIN_SIZE
+from constants import MIN_SIZE, MAX_DECIMALS, MIN_PRICE
 from order import Order
 
 from strategies.amm import AMMManager, AMMConfig
@@ -91,12 +91,17 @@ class AMMStrategy(BaseStrategy):
                 new_size = expected_size
             # otherwise get the remaining size
             else:
-                new_size = round(expected_size - open_size, 2)
+                new_size = round(expected_size - open_size, MAX_DECIMALS)
 
             if new_size >= MIN_SIZE:
-                orders_to_place += [
-                    self._new_order_from_order_type(order_type, new_size)
-                ]
+                # Check if the order value meets the minimum requirement
+                order_value = new_size * order_type.price
+                if order_value >= MIN_PRICE:
+                    orders_to_place += [
+                        self._new_order_from_order_type(order_type, new_size)
+                    ]
+                else:
+                    self.logger.warning(f"Skipping order due to minimum order value not met: {order_value:.2f} < {MIN_PRICE:.2f} (Size: {new_size}, Price: {order_type.price})")
 
         return (orders_to_cancel, orders_to_place)
 

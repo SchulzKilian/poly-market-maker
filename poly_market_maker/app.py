@@ -2,6 +2,7 @@ import logging
 from prometheus_client import start_http_server
 import time
 import os
+from decimal import Decimal, ROUND_HALF_UP
 # from args import get_args
 from price_feed import PriceFeedClob
 from gas import GasStation, GasStrategy
@@ -16,6 +17,7 @@ from contracts import Contracts
 from metrics import keeper_balance_amount, orders_placed_counter, profit_and_loss_gauge, market_info_gauge, position_gauge
 from strategy import StrategyManager
 import types
+from constants import MIN_TICK
 
 class App:
     """Market maker keeper on Polymarket CLOB"""
@@ -23,7 +25,7 @@ class App:
     def __init__(self, config, condition_id: str = None):
         setup_logging()
         self.logger = logging.getLogger(__name__)
-        # self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.DEBUG) # Explicitly set to DEBUG for debugging
         self.logger.debug(f"Initializing the keeper for condsition_id: {condition_id}")
 
         self.sync_interval = 5
@@ -90,6 +92,7 @@ class App:
         )
         self.last_balance = None
         self.starting_balance = None
+        self.last_balance_update_time = 0
 
     """
     main
@@ -110,6 +113,27 @@ class App:
         self.logger.info("Running startup callback...")
         self.approve()
         self.logger.info("Approvals done!")
+
+        self.logger.info("--- STARTING DEBUGGING OUTPUT ---")
+        # --- Debugging: Check collateral balance and allowance ---
+        collateral_token_address = self.clob_api.get_collateral_address()
+        clob_exchange_address = self.clob_api.get_exchange()
+
+        if collateral_token_address and clob_exchange_address:
+            self.logger.info(f"Collateral Token Address: {collateral_token_address}")
+            self.logger.info(f"CLOB Exchange Address (Spender): {clob_exchange_address}")
+
+            # Check collateral token balance
+            collateral_balance = self.contracts.token_balance_of(collateral_token_address, self.address)
+            self.logger.info(f"Your collateral token balance: {collateral_balance}")
+
+            # Check allowance for collateral token
+            allowance = self.contracts.is_approved_erc20(collateral_token_address, self.address, clob_exchange_address)
+            self.logger.info(f"Allowance for collateral token to CLOB: {allowance}")
+        else:
+            self.logger.warning("Could not retrieve collateral token or CLOB exchange address for debugging.")
+        # --- End Debugging ---
+
         self.order_book_manager.wait_for_order_book_ready()
         self.logger.info("Startup complete!")
 
@@ -139,6 +163,11 @@ class App:
         """
         Fetch the onchain balances of collateral and conditional tokens for the keeper
         """
+        current_time = time.time()
+        if self.last_balance and current_time - self.last_balance_update_time < 60:
+            self.logger.debug("Returning cached balance")
+            return self.last_balance
+
         self.logger.debug(f"Getting balances for address: {self.address}")
 
         collateral_balance = self.contracts.token_balance_of(
@@ -208,6 +237,7 @@ class App:
                         self.logger.info(f"Balance change for {token}: {balance_change:+.2f}. New balance: {balance:.2f}")
 
         self.last_balance = current_balance
+        self.last_balance_update_time = current_time
 
         if self.market_slug:
             for token, balance in current_balance.items():
@@ -251,27 +281,54 @@ class App:
 
     def place_order(self, new_order: Order) -> Order:
         self.logger.info(f"Placing order: {new_order.side.value} {new_order.size} of {new_order.token} at {new_order.price}")
-        orders_placed_counter.labels(
-            side=new_order.side.value
-        ).inc()
-        order_id = self.clob_api.place_order(
-            price=new_order.price,
-            size=new_order.size,
-            side=new_order.side.value,
-            token_id=self.market.token_id(new_order.token),
-        )
-        return Order(
-            price=new_order.price,
-            size=new_order.size,
-            side=new_order.side,
-            id=order_id,
-            token=new_order.token,
-        )
+        try:
+            # Fetch tick size for the token
+            tick_size_str = self.clob_api.client.get_tick_size(self.market.token_id(new_order.token))
+            tick_size = Decimal(tick_size_str) if tick_size_str else Decimal(str(MIN_TICK))
+            self.logger.debug(f"Fetched tick size for {new_order.token}: {tick_size}")
+
+            # Adjust price to tick size
+            adjusted_price = self._round_to_tick_size(new_order.price, tick_size)
+            self.logger.debug(f"Original price: {new_order.price}, Adjusted price to tick size ({tick_size}): {adjusted_price}")
+
+            orders_placed_counter.labels(
+                side=new_order.side.value
+            ).inc()
+            order_id = self.clob_api.place_order(
+                price=float(adjusted_price), # Use adjusted price
+                size=new_order.size,
+                side=new_order.side.value,
+                token_id=self.market.token_id(new_order.token),
+            )
+            self.logger.info(f"Successfully placed order {order_id} for {new_order.token}")
+            return Order(
+                price=float(adjusted_price), # Use adjusted price
+                size=new_order.size,
+                side=new_order.side,
+                id=order_id,
+                token=new_order.token,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to place order: {e}", exc_info=True)
+            return None
+
+    @staticmethod
+    def _round_to_tick_size(price: float, tick_size: Decimal) -> Decimal:
+        # Convert price to Decimal for precise calculation
+        price_dec = Decimal(str(price))
+        
+        # Calculate how many ticks the price is
+        num_ticks = (price_dec / tick_size).quantize(Decimal('1.'), rounding=ROUND_HALF_UP)
+        
+        # Round to the nearest tick
+        rounded_price = num_ticks * tick_size
+        return rounded_price.normalize() # Remove trailing zeros if any
 
     def approve(self):
         """
         Approve the keeper on the collateral and conditional tokens
         """
+        self.logger.info("Attempting to approve tokens...")
         self.logger.debug("Approving tokens for the keeper...")
         collateral = self.clob_api.get_collateral_address()
         if not collateral:

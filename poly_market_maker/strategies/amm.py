@@ -4,6 +4,7 @@ from math import sqrt
 from token_class import Token, Collateral
 from order import Order, Side
 from utils import math_round_down
+from constants import MAX_DECIMALS
 
 
 class AMMConfig:
@@ -59,25 +60,39 @@ class AMM:
             return
 
         self.p_i = p_i
-        self.p_u = round(min(p_i + self.depth, self.p_max), 2)
-        self.p_l = round(max(p_i - self.depth, self.p_min), 2)
+        self.p_u = round(min(p_i + self.depth, self.p_max), MAX_DECIMALS)
+        self.p_l = round(max(p_i - self.depth, self.p_min), MAX_DECIMALS)
 
         self.buy_prices = []
-        price = round(self.p_i - self.spread, 2)
+        price = round(self.p_i - self.spread, MAX_DECIMALS)
         while price >= self.p_l:
             self.buy_prices.append(price)
-            price = round(price - self.delta, 2)
+            price = round(price - self.delta, MAX_DECIMALS)
+
+        if not self.buy_prices:
+            self.logger.error(
+                f"No buy prices generated for token {self.token.name} with p_i={self.p_i}, "
+                f"p_l={self.p_l}, spread={self.spread}. This might indicate a "
+                "misconfiguration or an unusual market state."
+            )
 
         self.sell_prices = []
-        price = round(self.p_i + self.spread, 2)
+        price = round(self.p_i + self.spread, MAX_DECIMALS)
         while price <= self.p_u:
             self.sell_prices.append(price)
-            price = round(price + self.delta, 2)
+            price = round(price + self.delta, MAX_DECIMALS)
+
+        if not self.sell_prices:
+            self.logger.error(
+                f"No sell prices generated for token {self.token.name} with p_i={self.p_i}, "
+                f"p_u={self.p_u}, spread={self.spread}. This might indicate a "
+                "misconfiguration or an unusual market state."
+            )
 
     def get_sell_orders(self, x):
         sizes = [
             # round down to avoid too large orders
-            math_round_down(size, 2)
+            math_round_down(size, MAX_DECIMALS)
             for size in self.diff([self.sell_size(x, p_t) for p_t in self.sell_prices])
         ]
 
@@ -96,7 +111,7 @@ class AMM:
     def get_buy_orders(self, y):
         sizes = [
             # round down to avoid too large orders
-            math_round_down(size, 2)
+            math_round_down(size, MAX_DECIMALS)
             for size in self.diff([self.buy_size(y, p_t) for p_t in self.buy_prices])
         ]
 
@@ -113,6 +128,8 @@ class AMM:
         return orders
 
     def phi(self):
+        if not self.buy_prices or self.p_i is None:
+            return 0
         return (1 / (sqrt(self.p_i) - sqrt(self.p_l))) * (
             1 / sqrt(self.buy_prices[0]) - 1 / sqrt(self.p_i)
         )
@@ -196,11 +213,18 @@ class AMMManager:
         best_sell_order_size_a: float,
         best_sell_order_size_b: float,
     ):
+        phi_a = self.amm_a.phi()
+        phi_b = self.amm_b.phi()
+        phi_sum = phi_a + phi_b
+
+        if phi_sum == 0:
+            return (0.0, 0.0)
+
         collateral_allocation_a = (
             best_sell_order_size_a
             - best_sell_order_size_b
-            + collateral_balance * self.amm_b.phi()
-        ) / (self.amm_a.phi() + self.amm_b.phi())
+            + collateral_balance * phi_b
+        ) / phi_sum
 
         if collateral_allocation_a < 0:
             collateral_allocation_a = 0
@@ -209,6 +233,6 @@ class AMMManager:
         collateral_allocation_b = collateral_balance - collateral_allocation_a
 
         return (
-            math_round_down(collateral_allocation_a, 2),
-            math_round_down(collateral_allocation_b, 2),
+            math_round_down(collateral_allocation_a, MAX_DECIMALS),
+            math_round_down(collateral_allocation_b, MAX_DECIMALS),
         )
